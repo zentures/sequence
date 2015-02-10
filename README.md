@@ -73,7 +73,7 @@ go test
 To run the actual command you need to
 
 ```
-cd $GOPATH/src/github.com/strace/sequence/sequence
+cd $GOPATH/src/github.com/strace/sequence/cmd/sequence
 go run sequence.go
 ```
 
