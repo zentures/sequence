@@ -25,6 +25,7 @@
 //
 //    Available Commands:
 //      scan                      scan will tokenize a log file or message and output a list of tokens
+//      analyze                   analyze will analyze a log file and output a list of patterns that will match all the log messages
 //      parse                     parse will parse a log file and output a list of parsed tokens for each of the log messages
 //      bench                     benchmark the parsing of a log file, no output is provided
 //      help [command]            Help about any command
@@ -64,6 +65,54 @@
 //   #  20: { Field="%funknown%", Type="%string%", Value="/bin/su" }
 //   #  21: { Field="%funknown%", Type="%literal%", Value="-" }
 //   #  22: { Field="%funknown%", Type="%literal%", Value="ustream" }
+//
+// ### Analyze
+//
+// ```
+//   Usage:
+//     sequence analyze [flags]
+//
+//    Available Flags:
+//     -h, --help=false: help for analyze
+//     -i, --infile="": input file, required
+//     -o, --outfile="": output file, if empty, to stdout
+//     -d, --patdir="": pattern directory,, all files in directory will be used, optional
+//     -p, --patfile="": initial pattern file, optional
+// ```
+//
+// The following command analyzes a set of sshd log messages, and output the
+// patterns to the sshd.pat file. In this example, `sequence` analyzed over 200K
+// messages and found 45 unique patterns. Notice we are not supplying an existing
+// pattern file, so it treats all the patters as new.
+//
+// ```
+//   $ ./sequence analyze -i ../../data/sshd.all  -o sshd.pat
+//   Analyzed 212897 messages, found 45 unique patterns, 45 are new.
+// ```
+//
+// And the output file has entries such as:
+//
+//   %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2
+//   # Jan 15 19:39:26 irc sshd[7778]: Accepted password for jlz from 108.61.8.124 port 57630 ssh2
+//
+// The Analyzer tries to guess to the best of its ability on the type of tokens it
+// encounters. It can probably guess 50-60% but can often guess wrong. For example
+//
+//   %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% %string% %action% from %srcipv4% port %srcport% ssh2
+//   # Jan 15 18:25:24 jlz sshd[3721]: Failed password for invalid user building from 188.65.16.110 port 58375 ssh2
+//
+// In the above message, the token `invalid` is mistakenly guesssed as `%srcuser%`
+// because it follows the keyword `for`, as defined in keymaps.go.
+//
+// However, the analyzer should help reduce the amount of effort in writing rules.
+// Also, once some of the patterns are established, there should be fewer new ones
+// you need to write. For example, in the following command, we added an existing
+// pattern file to the mix, which has a set of existing rules. Notice now there are
+// only 35 unique patterns, and we were able to parse all of the log messages (no
+// new patterns). There are fewer patterns because some of the patterns were combined.
+//
+//   $ ./sequence analyze -d ../../patterns -i ../../data/sshd.all  -o sshd.pat
+//   Analyzed 212897 messages, found 35 unique patterns, 0 are new.
 //
 // ### Parse
 //

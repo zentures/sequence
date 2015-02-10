@@ -5,14 +5,11 @@ sequence
 
 [![GoDoc](http://godoc.org/github.com/strace/sequence/sequence?status.svg)](http://godoc.org/github.com/strace/sequence/sequence)
 
-`sequence` is a _high performance sequential semantic log parser_.
-
-* It is _sequential_ because it goes through a log message sequentially and does not use regular expressions. 
-* It is _semantic_ because it tries to extract meaningful information out of the log messages and give them semantic indicators, e.g., src IPv4 or dst IPv4. 
-* It is a _parser_ because it will take a message and parses out the meaningful parts.
-* It is _high performance_ because it can parse 100K+ messages per second without the need to separate parsing rules by log source type.
+`sequence` is a _high performance sequential log parser_. It _sequentially_ goes through a log message, _parses_ out the meaningful parts, without the use regular expressions. It can achieve _high performance_ parsing of **100,000 - 200,000 messages per second (MPS)** without the need to separate parsing rules by log source type.
 
 **`sequence` is currently under active development and should be considered unstable until further notice.**
+
+**If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/strace/sequence/issues) and we can arrange a way for me to download and test your logs.**
 
 ### Motivation
 
@@ -32,8 +29,7 @@ Sequence is developed to make analyzing and parsing log messages a lot easier an
 
 ### Performance
 
-The following performance benchmarks are run on a single 4-core (2.8Ghz i7) MacBook Pro. The first file is a
-bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes per message.
+The following performance benchmarks are run on a single 4-core (2.8Ghz i7) MacBook Pro, although the tests were only using 1 or 2 cores. The first file is a bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes per message. Last is a mix of ASA, sshd and sudo logs, averaging 136 bytes per message.
 
 ```
   $ ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all
@@ -41,6 +37,9 @@ bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA lo
 
   $ ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log
   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
+
+  $ ./sequence bench -d ../patterns -i ../data/asasshsudo.log
+  Parsed 447745 messages in 4.47 secs, ~ 100159.65 msgs/sec
 ```
 
 Performance can be improved by adding more cores:
@@ -51,7 +50,16 @@ Performance can be improved by adding more cores:
 
   $ GOMAXPROCS=2 ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
+
+  $ GOMAXPROCS=2 ./sequence bench -d ../patterns -i ../data/asasshsudo.log -w 2
+  Parsed 447745 messages in 2.52 secs, ~ 177875.94 msgs/sec
 ```
+
+### Limitations
+
+* `sequence` does not handle multi-line logs. Each log message must appear as a single line. So if there's multi-line logs, they must be first be converted into a single line.
+* `sequence` has been only tested with a limited set of system (Linux, AIX, sudo, ssh, su, dhcp, etc etc), network (ASA, PIX, Neoteris, CheckPoint, Juniper Firewall) and infrastructure application (apache, bluecoat, etc) logs. If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/strace/sequence/issues) and we can arrange a way for me to download and test your logs.
+
 
 ### Documentation
 
@@ -90,7 +98,9 @@ The following concepts are part of the package:
 - A _Sequence_ is a list of Tokens. It is returned by the _Tokenizer_, and the _Parser_.
 
 - A _Scanner_ is a sequential lexical analyzer that breaks a log message into a sequence of tokens. It is sequential because it goes through log message sequentially tokentizing each part of the message, without the use of regular expressions. The scanner currently recognizes time stamps, IPv4 addresses, URLs, MAC addresses,
-integers and floating point numbers. It also recgonizes key=value or key="value" or key='value' or key=<value> pairs.
+integers and floating point numbers. 
+
+- A _Analyzer_ builds an analysis tree that represents all the Sequences from messages. It can be used to determine all of the unique patterns for a large body of messages.
 
 - A _Parser_ is a tree-based parsing engine for log messages. It builds a parsing tree based on pattern sequence supplied, and for each message sequence, returns the matching pattern sequence. Each of the message tokens will be marked with the semantic field types.
 
@@ -104,6 +114,7 @@ The `sequence` command is developed to demonstrate the use of this package. You 
 
    Available Commands:
      scan                      scan will tokenize a log file or message and output a list of tokens
+     analyze                   analyze will analyze a log file and output a list of patterns that will match all the log messages
      parse                     parse will parse a log file and output a list of parsed tokens for each of the log messages
      bench                     benchmark the parsing of a log file, no output is provided
      help [command]            Help about any command
@@ -147,6 +158,54 @@ Example
   #  20: { Field="%funknown%", Type="%string%", Value="/bin/su" }
   #  21: { Field="%funknown%", Type="%literal%", Value="-" }
   #  22: { Field="%funknown%", Type="%literal%", Value="ustream" }
+```
+
+### Analyze
+
+```
+  Usage:
+    sequence analyze [flags]
+
+   Available Flags:
+    -h, --help=false: help for analyze
+    -i, --infile="": input file, required
+    -o, --outfile="": output file, if empty, to stdout
+    -d, --patdir="": pattern directory,, all files in directory will be used, optional
+    -p, --patfile="": initial pattern file, optional
+```
+
+The following command analyzes a set of sshd log messages, and output the
+patterns to the sshd.pat file. In this example, `sequence` analyzed over 200K
+messages and found 45 unique patterns. Notice we are not supplying an existing
+pattern file, so it treats all the patters as new.
+
+```
+  $ ./sequence analyze -i ../../data/sshd.all  -o sshd.pat
+  Analyzed 212897 messages, found 45 unique patterns, 45 are new.
+```
+
+And the output file has entries such as:
+
+```
+%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2
+# Jan 15 19:39:26 irc sshd[7778]: Accepted password for jlz from 108.61.8.124 port 57630 ssh2
+```
+
+The Analyzer tries to guess to the best of its ability on the type of tokens it encounters. It can probably guess 50-60% but can often guess wrong. For example
+
+```
+%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% %string% %action% from %srcipv4% port %srcport% ssh2
+# Jan 15 18:25:24 jlz sshd[3721]: Failed password for invalid user building from 188.65.16.110 port 58375 ssh2
+```
+
+In the above message, the token `invalid` is mistakenly guesssed as `%srcuser%` because it follows the keyword `for`, as defined in [keymaps.go](https://github.com/strace/sequence/blob/master/keymaps.go). 
+
+However, the analyzer should help reduce the amount of effort in writing rules. Also, once some of the patterns are established, there should be fewer new ones you need to write. For example, in the following command, we added an existing pattern file to the mix, which has a set of existing rules. Notice now there are only 35 unique patterns, and we were able to parse all of the log messages (no new patterns). There are fewer patterns
+because some of the patterns were combined.
+
+```
+  $ ./sequence analyze -d ../../patterns -i ../../data/sshd.all  -o sshd.pat
+  Analyzed 212897 messages, found 35 unique patterns, 0 are new.
 ```
 
 ### Parse
