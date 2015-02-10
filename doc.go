@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sequence is a library for a _sequential semantic log parser_.
-//
-// It is _sequential_ because it goes through a log message sequentially and does not
-// use regular expressions. It is _semantic_ because it tries to extract meaningful
-// information out of the log messages and give them semantic indicators, e.g.,
-// src IPv4 or dst IPv4. It is an _analyzer_ because analyzes a large corpus of
-// text-based log messages and try to determine the unique patterns that would
-// represent all of them. It is a _parser_ because it will take a message and
-// parses out the meaningful parts.
+// `sequence` is a _high performance sequential log parser_. It _sequentially_
+// goes through a log message, _parses_ out the meaningful parts, without the
+// use regular expressions. It can achieve _high performance_ parsing of
+// **100,000 - 200,000 messages per second (MPS)** without the need to separate
+// parsing rules by log source type.
 //
 // ### Motivation
 //
@@ -90,8 +86,31 @@
 // The scanner currently recognizes time stamps, IPv4 addresses, URLs, MAC addresses,
 // integers and floating point numbers.
 //
+// - A _Analyzer_ builds an analysis tree that represents all the Sequences from messages.
+// It can be used to determine all of the unique patterns for a large body of messages.
+//
 // - A _Parser_ is a tree-based parsing engine for log messages. It builds a parsing
 // tree based on pattern sequence supplied, and for each message sequence, returns
 // the matching pattern sequence. Each of the message tokens will be marked with the
 // semantic field types.
+//
+// ### Performance
+//
+// The following command will benchmark the parsing of two files. First file is a
+// bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA
+// log file, averaging 180 bytes per message.
+//
+//   $ ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all
+//   Parsed 212897 messages in 1.69 secs, ~ 126319.27 msgs/sec
+//
+//   $ ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log
+//   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
+//
+// Performance can be improved by adding more cores:
+//
+//   GOMAXPROCS=2 ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
+//   Parsed 212897 messages in 1.00 secs, ~ 212711.83 msgs/sec
+//
+//   $ GOMAXPROCS=2 ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
+//   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
 package sequence

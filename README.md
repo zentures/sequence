@@ -187,15 +187,15 @@ pattern file, so it treats all the patters as new.
 And the output file has entries such as:
 
 ```
-%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2
-# Jan 15 19:39:26 irc sshd[7778]: Accepted password for jlz from 108.61.8.124 port 57630 ssh2
+  %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2
+  # Jan 15 19:39:26 irc sshd[7778]: Accepted password for jlz from 108.61.8.124 port 57630 ssh2
 ```
 
 The Analyzer tries to guess to the best of its ability on the type of tokens it encounters. It can probably guess 50-60% but can often guess wrong. For example
 
 ```
-%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% %string% %action% from %srcipv4% port %srcport% ssh2
-# Jan 15 18:25:24 jlz sshd[3721]: Failed password for invalid user building from 188.65.16.110 port 58375 ssh2
+  %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% %string% %action% from %srcipv4% port %srcport% ssh2
+  # Jan 15 18:25:24 jlz sshd[3721]: Failed password for invalid user building from 188.65.16.110 port 58375 ssh2
 ```
 
 In the above message, the token `invalid` is mistakenly guesssed as `%srcuser%` because it follows the keyword `for`, as defined in [keymaps.go](https://github.com/strace/sequence/blob/master/keymaps.go). 
