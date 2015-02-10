@@ -16,7 +16,6 @@ package sequence
 
 import (
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 )
@@ -39,7 +38,7 @@ type parseNode struct {
 	parent bool // is this parent, or does this have child(ren)?
 
 	// token types children
-	tc [numTokenTypes][]*parseNode
+	tc [TokenTypesCount][]*parseNode
 
 	// literal children
 	lc map[string]*parseNode
@@ -76,28 +75,17 @@ func (this *parseNode) String() string {
 // Add will add a single pattern sequence to the parser tree. This effectively
 // builds the parser tree so it can be used for parsing later.
 func (this *Parser) Add(s string) error {
-	msg := &Message{}
-	msg.SetData(s)
-
-	//glog.Debugf("Adding %s", s)
-
-	var (
-		cur   = this.root
-		token Token
-		err   error
-	)
-
-	for token, err = msg.Scan(); err == nil; token, err = msg.Scan() {
-	}
-
-	if err != io.EOF {
+	seq, err := (&Message{}).Tokenize(s)
+	if err != nil {
 		return err
 	}
 
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	for _, token = range msg.Sequence() {
+	cur := this.root
+
+	for _, token := range seq {
 		vl := len(token.Value)
 		more, rest := false, false
 
@@ -118,7 +106,6 @@ func (this *Parser) Add(s string) error {
 				token.Type = t
 				token.Field = FieldUnknown
 			}
-
 		}
 
 		var found *parseNode
@@ -169,8 +156,8 @@ func (this *Parser) Add(s string) error {
 	cur.leaf = true
 
 	//fmt.Printf("parser.go/AddPattern(): count = %d, height = %d\n", msg.Count(), this.height)
-	if len(msg.Sequence()) > this.height {
-		this.height = len(msg.Sequence()) + 1
+	if len(seq) > this.height {
+		this.height = len(seq) + 1
 	}
 
 	return nil

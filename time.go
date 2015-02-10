@@ -51,6 +51,7 @@ var TimeFormats []string = []string{
 	"1/2/2006 3:04:05 PM",
 	"1/2/06 3:04:05.000 PM",
 	"1/2/2006 15:04",
+	"02Jan2006 03:04:05",
 }
 
 type timeNodeType int

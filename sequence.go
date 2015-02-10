@@ -61,7 +61,7 @@ func (this Sequence) Signature() string {
 }
 
 // Longstring returns a multi-line representation of the tokens in the sequence
-func (this Sequence) LongString() string {
+func (this Sequence) PrintTokens() string {
 	var str string
 	for i, t := range this {
 		str += fmt.Sprintf("# %3d: %s\n", i, t)

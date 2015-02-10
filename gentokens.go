@@ -41,6 +41,8 @@ var (
 		{"%mac%", "TokenMac", "Token is a mac address"},
 		{"%string%", "TokenString", "Token is a string that reprensents multiple possible values"},
 		{"token__END__", "token__END__", "All field types must be inserted before this one"},
+		{"token__host__", "token__host__", "Token is a host name"},
+		{"token__email__", "token__email__", "Token is an email address"},
 	}
 
 	fields = []struct {
@@ -135,18 +137,16 @@ import "fmt"
 // if the Scanner finds a token that's surrounded by %%, e.g., %%srcuser%%, it will
 // try to determine the correct field type the token represents.
 type Token struct {
-	// Type is the type of token the Value represents.
-	Type TokenType
+	Type  TokenType // Type is the type of token the Value represents.
+	Field FieldType // Field determines which field the Value should be.
+	Value string    // Value is the extracted string from the log message.
 
-	// Field determines which field the Value should be.
-	Field FieldType
-
-	// Value is the extracted string from the log message.
-	Value string
+	isValue bool // Is this token a key in k=v pair
+	isKey   bool // Is this token a value in k=v pair
 }
 
 func (this Token) String() string {
-	return fmt.Sprintf("{ Field=%%q, Type=%%q, Value=%%q }", this.Field, this.Type, this.Value)
+	return fmt.Sprintf("{ Field=%%q, Type=%%q, Value=%%q, K=%%t, V=%%t }", this.Field, this.Type, this.Value, this.isKey, this.isValue)
 }
 
 type (
@@ -166,10 +166,9 @@ const (
 	partialMatchWeight = 1
 	fullMatchWeight    = 2
 
-	numFieldTypes    = int(field__END__) + 1
-	numTokenTypes    = int(token__END__) + 1
-	numAllTypes      = numFieldTypes + numTokenTypes
-	minFixedChildren = numAllTypes
+	FieldTypesCount    = int(field__END__) + 1
+	TokenTypesCount    = int(token__END__) + 1
+	allTypesCount      = FieldTypesCount + TokenTypesCount
 )
 
 const (

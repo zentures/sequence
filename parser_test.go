@@ -48,7 +48,7 @@ func TestParserMatchPatterns(t *testing.T) {
 	for _, tc := range parsetests {
 		seq, err := parser.Parse(tc.msg)
 		require.NoError(t, err, tc.msg)
-		require.Equal(t, tc.rule, seq.String(), seq.LongString())
+		require.Equal(t, tc.rule, seq.String(), seq.PrintTokens())
 	}
 }
 

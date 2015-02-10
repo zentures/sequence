@@ -61,7 +61,7 @@ type Message struct {
 		cur, start, end int
 
 		// should the next token be a value?
-		nextIsValue bool
+		nextisValue bool
 
 		// how far from the = is the value, immediate following is 0
 		valueDistance int

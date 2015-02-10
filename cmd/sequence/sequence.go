@@ -174,6 +174,11 @@ var (
 		Short: "scan will tokenize a log file or message and output a list of tokens",
 	}
 
+	analyzeCmd = &cobra.Command{
+		Use:   "analyze",
+		Short: "analyze will analyze a log file and output a list of patterns that will match all the log messages",
+	}
+
 	parseCmd = &cobra.Command{
 		Use:   "parse",
 		Short: "parse will parse a log file and output a list of parsed tokens for each of the log messages",
@@ -203,6 +208,12 @@ func init() {
 	scanCmd.Flags().StringVarP(&inmsg, "msg", "m", "", "message to tokenize")
 	scanCmd.Run = scan
 
+	analyzeCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required")
+	analyzeCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
+	analyzeCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used, optional")
+	analyzeCmd.Flags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
+	analyzeCmd.Run = analyze
+
 	parseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
 	parseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, required")
 	parseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
@@ -217,6 +228,7 @@ func init() {
 	benchCmd.Run = bench
 
 	sequenceCmd.AddCommand(scanCmd)
+	sequenceCmd.AddCommand(analyzeCmd)
 	sequenceCmd.AddCommand(parseCmd)
 	sequenceCmd.AddCommand(benchCmd)
 }
@@ -264,7 +276,98 @@ func scan(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	fmt.Println(seq.LongString())
+	fmt.Println(seq.PrintTokens())
+}
+
+func analyze(cmd *cobra.Command, args []string) {
+	if infile == "" {
+		log.Fatal("Invalid input file")
+	}
+
+	profile()
+
+	parser := buildParser()
+	analyzer := sequence.NewAnalyzer()
+
+	// Open input file
+	iscan, ifile := openFile(infile)
+	defer ifile.Close()
+
+	// For all the log messages, if we can't parse it, then let's add it to the
+	// analyzer for pattern analysis
+	for iscan.Scan() {
+		line := iscan.Text()
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+
+		if _, err := parser.Parse(line); err != nil {
+			analyzer.Add(line)
+		}
+	}
+
+	ifile.Close()
+	analyzer.Finalize()
+
+	iscan, ifile = openFile(infile)
+	defer ifile.Close()
+
+	pmap := make(map[string]map[string]string)
+	amap := make(map[string]map[string]string)
+	n := 0
+
+	// Now that we have built the analyzer, let's go through each log message again
+	// to determine the unique patterns
+	for iscan.Scan() {
+		line := iscan.Text()
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		n++
+
+		pseq, err := parser.Parse(line)
+		if err == nil {
+			pat := pseq.String()
+			sig := pseq.Signature()
+			if _, ok := pmap[pat]; !ok {
+				pmap[pat] = make(map[string]string)
+			}
+			pmap[pat][sig] = line
+		} else {
+			aseq, err := analyzer.Analyze(line)
+			if err != nil {
+				log.Printf("Error parsing: %s", line)
+			} else {
+				pat := aseq.String()
+				sig := aseq.Signature()
+				if _, ok := amap[pat]; !ok {
+					amap[pat] = make(map[string]string)
+				}
+				amap[pat][sig] = line
+			}
+		}
+	}
+
+	ofile := openOutputFile(outfile)
+	defer ofile.Close()
+
+	for pat, lines := range pmap {
+		fmt.Fprintf(ofile, "%s\n", pat)
+		for _, line := range lines {
+			fmt.Fprintf(ofile, "# %s\n", line)
+		}
+		fmt.Fprintln(ofile)
+	}
+
+	for pat, lines := range amap {
+		fmt.Fprintf(ofile, "%s\n", pat)
+		for _, line := range lines {
+			fmt.Fprintf(ofile, "# %s\n", line)
+		}
+		fmt.Fprintln(ofile)
+	}
+
+	log.Printf("Analyzed %d messages, found %d unique patterns, %d are new.", n, len(pmap)+len(amap), len(amap))
 }
 
 func parse(cmd *cobra.Command, args []string) {
@@ -296,7 +399,7 @@ func parse(cmd *cobra.Command, args []string) {
 		if err != nil {
 			log.Printf("Error (%s) parsing: %s", err, line)
 		} else {
-			fmt.Fprintf(ofile, "%s\n%s\n\n", line, pseq.LongString())
+			fmt.Fprintf(ofile, "%s\n%s\n\n", line, pseq.PrintTokens())
 		}
 	}
 
