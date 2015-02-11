@@ -60,6 +60,18 @@ var (
 			"Jan 12 10:38:51 irc sshd[7705]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=114.80.226.94  user=root",
 			"%msgtime% %apphost% %appname% [ %sessionid% ] : %string% ( sshd : %string% ) : authentication %status% ; logname = %string% = %integer% euid = %integer% tty = %string% ruser = rhost = %srcipv4% user = %dstuser%",
 		},
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection rate 1/60s for (smtp:5.5.5.5) at Jan 31 21:39:37",
+			"%msgtime% %apphost% %appname% [ %integer% ] : statistics : max connection rate %string% for ( smtp : %appipv4% ) at %time%",
+		},
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection count 1 for (smtp:5.5.5.5) at Jan 31 21:39:37",
+			"%msgtime% %apphost% %appname% [ %integer% ] : statistics : max connection count %integer% for ( smtp : %appipv4% ) at %time%",
+		},
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max cache size 1 at Jan 31 21:39:37",
+			"%msgtime% %apphost% %appname% [ %integer% ] : statistics : max cache size %integer% at %time%",
+		},
 	}
 
 	parsetests2 = []struct {
@@ -100,7 +112,7 @@ func TestParserParseMessages(t *testing.T) {
 	}
 
 	for _, tc := range parsetests2 {
-		seq, err := parser.Parse(tc.msg)
+		_, err := parser.Parse(tc.msg)
 		require.NoError(t, err, tc.msg)
 		//glog.Debugln(seq.PrintTokens())
 	}

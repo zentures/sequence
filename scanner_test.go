@@ -597,6 +597,78 @@ var (
 			},
 		},
 
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection rate 1/60s for (smtp:5.5.5.5) at Jan 31 21:39:37", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "postfix/anvil", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "14606", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "statistics", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "max", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "connection", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "rate", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "1/60s", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "for", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "(", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "smtp", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "5.5.5.5", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ")", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "at", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:39:37", isKey: false, isValue: false},
+			},
+		},
+
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection count 1 for (smtp:5.5.5.5) at Jan 31 21:39:37", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "postfix/anvil", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "14606", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "statistics", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "max", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "connection", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "count", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "for", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "(", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "smtp", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "5.5.5.5", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ")", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "at", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:39:37", isKey: false, isValue: false},
+			},
+		},
+
+		{
+			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max cache size 1 at Jan 31 21:39:37", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "postfix/anvil", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "14606", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "statistics", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "max", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "cache", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "size", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "at", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:39:37", isKey: false, isValue: false},
+			},
+		},
+
 		// {
 		// 	"%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method/10%", Sequence{
 		// 		Token{Type: TokenTime, Field: FieldMsgTime, Value: "%msgtime%"},
@@ -651,7 +723,6 @@ func BenchmarkMessageOne(b *testing.B) {
 	msg := &Message{}
 
 	for i := 0; i < b.N; i++ {
-		//msg.SetData(sigtests[0].msg)
 		msg.Tokenize(sigtests[0].msg)
 	}
 }

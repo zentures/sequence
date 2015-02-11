@@ -279,7 +279,7 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 				if timeLen > 0 {
 					return timeLen, TokenTime, nil
 				}
-			} else if tnode.final != TokenUnknown {
+			} else if tnode.final == TokenTime {
 				if i+1 > timeLen {
 					timeLen = i + 1
 				}
@@ -296,6 +296,10 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 				return tokenLen, this.state.tokenType, nil
 			}
 		}
+	}
+
+	if timeLen > 0 {
+		return timeLen, TokenTime, nil
 	}
 
 	return len(data), this.state.tokenType, nil

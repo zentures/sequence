@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/surge/glog"
 )
 
 // Parser is a tree-based parsing engine for log messages. It builds a parsing tree
@@ -144,7 +142,6 @@ func (this *Parser) Add(s string) error {
 			var ok bool
 			v := strings.ToLower(token.Value)
 			if found, ok = cur.lc[v]; !ok {
-				glog.Debugf("ToLower(v)=%q", v)
 				found = newParseNode()
 				found.Token = token
 				found.Value = v
@@ -153,7 +150,7 @@ func (this *Parser) Add(s string) error {
 			}
 		}
 
-		glog.Debugf("Added %s", found)
+		//glog.Debugf("Added %s", found)
 		cur = found
 	}
 
@@ -181,7 +178,7 @@ func (this *Parser) Parse(s string) (Sequence, error) {
 		}
 	}
 
-	glog.Debugln(seq.PrintTokens())
+	//glog.Debugln(seq.PrintTokens())
 
 	this.mu.RLock()
 	defer this.mu.RUnlock()
@@ -204,7 +201,7 @@ func (this *Parser) Parse(s string) (Sequence, error) {
 		// pop the last element from the toVisit stack
 		toVisit, cur = toVisit[:len(toVisit)-1], toVisit[len(toVisit)-1]
 
-		glog.Debugf("cur=%s, len(seq)=%d", cur.String(), len(seq))
+		//glog.Debugf("cur=%s, len(seq)=%d", cur.String(), len(seq))
 
 		// cur is the current token, if it's added to the list, that means it matched
 		// the last token, which means it should be part of the path. If it's level 0,
@@ -251,27 +248,21 @@ func (this *Parser) Parse(s string) (Sequence, error) {
 			continue
 		}
 
-		glog.Debugf("token=%q", token)
+		//glog.Debugf("token=%q", token)
 
 		switch token.Type {
 		case TokenLiteral:
 			for _, n := range cur.node.tc[TokenString] {
-				glog.Debugf("1 checking node=%q", n)
 				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + partialMatchWeight, token.Value})
 			}
 
-			glog.Debugln(cur.node.lc)
-			glog.Debugln(token.Value)
-
 			// If the values match, then it's a full match, add it to the stack
 			if n, ok := cur.node.lc[token.Value]; ok {
-				glog.Debugf("2 checking node=%q", n)
 				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + fullMatchWeight, token.Value})
 			}
 
 		default:
 			for _, n := range cur.node.tc[token.Type] {
-				glog.Debugf("3 checking node=%q", n)
 				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + fullMatchWeight, token.Value})
 			}
 		}
