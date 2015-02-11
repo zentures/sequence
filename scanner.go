@@ -237,6 +237,7 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 		tnode                      *timeNode = timeFsmRoot
 		timeStop, macStop, macType bool
 		timeLen, tokenLen          int
+		l                          = len(data)
 	)
 
 	this.state.dots = 0
@@ -245,13 +246,13 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 
 	// short circuit the mac check
 	// positions 2,5,8,11,14 must be ':'
-	if len(data) < 17 || data[2] != ':' || data[14] != ':' {
+	if l < 17 || data[2] != ':' || data[14] != ':' {
 		macStop = true
 		macType = false
 	}
 
 	// short circuit the time check
-	if len(data) < minTimeLength {
+	if l < minTimeLength {
 		timeStop = true
 	}
 
