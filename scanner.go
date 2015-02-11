@@ -314,16 +314,25 @@ func (this *Message) tokenStep(index int, r rune) {
 			(index >= 6 && !unicode.IsSpace(r)) {
 
 			this.state.tokenType = TokenURL
-		} else if unicode.IsSpace(r) {
-			this.state.tokenStop = true
-		} else {
+		} else if isLiteral(r) {
 			this.state.tokenType = TokenLiteral
+		} else {
+			// if there are 6 or less chars, then it can't be an URL, must be literal
+			if index < 6 {
+				this.state.tokenType = TokenLiteral
+			}
+
+			// if it's /, then it's probably something like http/1.0 or http/1.1,
+			// let's keep it going
+			if r != '/' {
+				this.state.tokenStop = true
+			}
 		}
 
 	case index == 0 && (r == 'h' || r == 'H'):
 		this.state.tokenType = TokenURL
 
-	case (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?':
+	case isLiteral(r):
 		this.state.tokenType = TokenLiteral
 
 	case r == '/':
@@ -556,4 +565,8 @@ func (this *Message) reset() {
 
 func isLetter(ch rune) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch)
+}
+
+func isLiteral(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?'
 }

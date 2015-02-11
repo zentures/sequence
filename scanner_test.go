@@ -24,19 +24,58 @@ var (
 	sigtests = []struct {
 		msg, sig string
 	}{
-		{"jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root", "%time%[%integer%]:(:):;==%integer%=%integer%===="},
-		{"jan 12 06:49:42 irc sshd[7034]: failed password for root from 218.161.81.238 port 4228 ssh2", "%time%[%integer%]:%ipv4%%integer%"},
-		{"9.26.157.45 - - [16/jan/2003:21:22:59 -0500] \"get /wssamples/ http/1.1\" 200 1576", "%ipv4%--[%time%]\"\"%integer%%integer%"},
-		{"209.36.88.3 - - [03/may/2004:01:19:07 +0000] \"get http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectrange&dr=0month&so=relevance&st=nw&ss=afr&sf=article&rc=00&clspage=0&docid=fin0000000r0jl000d00 http/1.0\" 200 27981", "%ipv4%--[%time%]\"%url%\"%integer%%integer%"},
-		{"4/5/2012 17:55,172.23.1.101,1101,172.23.0.10,139, generic protocol command decode,3, [1:2100538:17] gpl netbios smb ipc$ unicode share access ,tcp ttl:128 tos:0x0 id:1643 iplen:20 dgmlen:122 df,***ap*** seq: 0xcef93f32  ack: 0xc40c0bb  n: 0xfc9c  tcplen: 20,", "%time%,%ipv4%,%integer%,%ipv4%,%integer%,,%integer%,[%integer%:%integer%:%integer%],:%integer%::%integer%:%integer%:%integer%,::n::%integer%,"},
-		{"2012-04-05 17:54:47     local4.info     172.23.0.1      %asa-6-302015: built outbound udp connection 1315679 for outside:193.0.14.129/53 (193.0.14.129/53) to inside:172.23.0.10/64048 (10.32.0.1/52130)", "%time%%ipv4%:%integer%:%ipv4%/%integer%(%ipv4%/%integer%):%ipv4%/%integer%(%ipv4%/%integer%)"},
-		{"may  2 19:00:02 dlfssrv sendmail[18980]: taa18980: from user daemon: size is 596, class is 0, priority is 30596, and nrcpts=1, message id is <200305021400.taa18980@dlfssrv.in.ibm.com>, relay=daemon@localhost", "%time%[%integer%]:::%integer%,%integer%,%integer%,=%integer%,<>,="},
-		{"jan 12 06:49:56 irc last message repeated 6 times", "%time%%integer%"},
-		{"9.26.157.44 - - [16/jan/2003:21:22:59 -0500] \"get http://wssamples http/1.1\" 301 315", "%ipv4%--[%time%]\"%url%\"%integer%%integer%"},
-		{"2012-04-05 17:51:26     local4.info     172.23.0.1      %asa-6-302016: teardown udp connection 1315632 for inside:172.23.0.2/514 to identity:172.23.0.1/514 duration 0:09:23 bytes 7999", "%time%%ipv4%:%integer%:%ipv4%/%integer%:%ipv4%/%integer%%integer%:%integer%:%integer%%integer%"},
-		{"id=firewall time=\"2005-03-18 14:01:43\" fw=topsec priv=4 recorder=kernel type=conn policy=504 proto=tcp rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82", "==\"%time%\"==%integer%===%integer%===%ipv4%=%integer%=%ipv4%=%integer%=%mac%=%mac%"},
-		{"mar 01 09:42:03.875 pffbisvr smtp[2424]: 334 warning: denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30]", "%time%[%integer%]:%integer%:''[%ipv4%]"},
-		{"mar 01 09:45:02.596 pffbisvr smtp[2424]: 121 statistics: duration=181.14 user=<egreetings@vishwak.com> id=zduqd sent=1440 rcvd=356 srcif=d45f49a2-b30 src=209.235.210.30/61663 cldst=192.216.179.206/25 svsrc=172.17.74.195/8423 dstif=fd3c875c-064 dst=172.17.74.52/25 op=\"to 1 recips\" arg=<vishwakstg1ojte15fo000033b4@vishwakstg1.msn.vishwak.net> result=\"250 m2004030109385301402 message accepted for delivery\" proto=smtp rule=131 (denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30])", "%time%[%integer%]:%integer%:=%float%=<>==%integer%=%integer%==%ipv4%/%integer%=%ipv4%/%integer%=%ipv4%/%integer%==%ipv4%/%integer%=\"\"=<>=\"\"==%integer%(''[%ipv4%])"},
+		{
+			"jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root",
+			"%time%[%integer%]:(:):;==%integer%=%integer%====",
+		},
+		{
+			"jan 12 06:49:42 irc sshd[7034]: failed password for root from 218.161.81.238 port 4228 ssh2",
+			"%time%[%integer%]:%ipv4%%integer%",
+		},
+		{
+			"9.26.157.45 - - [16/jan/2003:21:22:59 -0500] \"get /wssamples/ http/1.1\" 200 1576",
+			"%ipv4%--[%time%]\"\"%integer%%integer%",
+		},
+		{
+			"209.36.88.3 - - [03/may/2004:01:19:07 +0000] \"get http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectrange&dr=0month&so=relevance&st=nw&ss=afr&sf=article&rc=00&clspage=0&docid=fin0000000r0jl000d00 http/1.0\" 200 27981",
+			"%ipv4%--[%time%]\"%url%\"%integer%%integer%",
+		},
+		{
+			"4/5/2012 17:55,172.23.1.101,1101,172.23.0.10,139, generic protocol command decode,3, [1:2100538:17] gpl netbios smb ipc$ unicode share access ,tcp ttl:128 tos:0x0 id:1643 iplen:20 dgmlen:122 df,***ap*** seq: 0xcef93f32  ack: 0xc40c0bb  n: 0xfc9c  tcplen: 20,",
+			"%time%,%ipv4%,%integer%,%ipv4%,%integer%,,%integer%,[%integer%:%integer%:%integer%],:%integer%::%integer%:%integer%:%integer%,::n::%integer%,",
+		},
+		{
+			"2012-04-05 17:54:47     local4.info     172.23.0.1      %asa-6-302015: built outbound udp connection 1315679 for outside:193.0.14.129/53 (193.0.14.129/53) to inside:172.23.0.10/64048 (10.32.0.1/52130)",
+			"%time%%ipv4%:%integer%:%ipv4%/%integer%(%ipv4%/%integer%):%ipv4%/%integer%(%ipv4%/%integer%)",
+		},
+		{
+			"may  2 19:00:02 dlfssrv sendmail[18980]: taa18980: from user daemon: size is 596, class is 0, priority is 30596, and nrcpts=1, message id is <200305021400.taa18980@dlfssrv.in.ibm.com>, relay=daemon@localhost",
+			"%time%[%integer%]:::%integer%,%integer%,%integer%,=%integer%,<>,=",
+		},
+		{
+			"jan 12 06:49:56 irc last message repeated 6 times",
+			"%time%%integer%",
+		},
+		{
+			"9.26.157.44 - - [16/jan/2003:21:22:59 -0500] \"get http://wssamples http/1.1\" 301 315",
+			"%ipv4%--[%time%]\"%url%\"%integer%%integer%",
+		},
+		{
+			"2012-04-05 17:51:26     local4.info     172.23.0.1      %asa-6-302016: teardown udp connection 1315632 for inside:172.23.0.2/514 to identity:172.23.0.1/514 duration 0:09:23 bytes 7999",
+			"%time%%ipv4%:%integer%:%ipv4%/%integer%:%ipv4%/%integer%%integer%:%integer%:%integer%%integer%",
+		},
+		{
+			"id=firewall time=\"2005-03-18 14:01:43\" fw=topsec priv=4 recorder=kernel type=conn policy=504 proto=tcp rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82",
+			"==\"%time%\"==%integer%===%integer%===%ipv4%=%integer%=%ipv4%=%integer%=%mac%=%mac%",
+		},
+		{
+			"mar 01 09:42:03.875 pffbisvr smtp[2424]: 334 warning: denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30]",
+			"%time%[%integer%]:%integer%:''[%ipv4%]",
+		},
+		{
+			"mar 01 09:45:02.596 pffbisvr smtp[2424]: 121 statistics: duration=181.14 user=<egreetings@vishwak.com> id=zduqd sent=1440 rcvd=356 srcif=d45f49a2-b30 src=209.235.210.30/61663 cldst=192.216.179.206/25 svsrc=172.17.74.195/8423 dstif=fd3c875c-064 dst=172.17.74.52/25 op=\"to 1 recips\" arg=<vishwakstg1ojte15fo000033b4@vishwakstg1.msn.vishwak.net> result=\"250 m2004030109385301402 message accepted for delivery\" proto=smtp rule=131 (denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30])",
+			"%time%[%integer%]:%integer%:=%float%=<>==%integer%=%integer%==%ipv4%/%integer%=%ipv4%/%integer%=%ipv4%/%integer%==%ipv4%/%integer%=\"\"=<>=\"\"==%integer%(''[%ipv4%])",
+		},
 	}
 
 	seqtests = []struct {
@@ -528,6 +567,36 @@ var (
 			},
 		},
 
+		{
+			"2015-02-11 11:04:40 H=(amoricanexpress.com) [64.20.195.132]:10246 F=<fxC4480@amoricanexpress.com> rejected RCPT <SCRUBBED@SCRUBBED.com>: Sender verify failed", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-02-11 11:04:40", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "H", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "(", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "amoricanexpress.com", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ")", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "64.20.195.132", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "10246", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "F", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "<", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "fxC4480@amoricanexpress.com", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ">", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "rejected", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "RCPT", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "<", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "SCRUBBED@SCRUBBED.com", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ">", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Sender", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "verify", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "failed", isKey: false, isValue: false},
+			},
+		},
+
 		// {
 		// 	"%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method/10%", Sequence{
 		// 		Token{Type: TokenTime, Field: FieldMsgTime, Value: "%msgtime%"},
@@ -571,11 +640,10 @@ func TestMessageTokenize(t *testing.T) {
 	msg := &Message{}
 
 	for _, tc := range seqtests {
-		//		msg.SetData(tc.msg)
-
 		seq, err := msg.Tokenize(tc.msg)
 		require.NoError(t, err)
-		require.Equal(t, tc.seq, seq)
+		require.Equal(t, tc.seq, seq, tc.msg)
+		//glog.Debugln(seq.PrintTokens())
 	}
 }
 
@@ -587,4 +655,3 @@ func BenchmarkMessageOne(b *testing.B) {
 		msg.Tokenize(sigtests[0].msg)
 	}
 }
-
