@@ -22,7 +22,7 @@ import (
 
 var (
 	sigtests = []struct {
-		msg, sig string
+		data, sig string
 	}{
 		{
 			"jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root",
@@ -62,7 +62,7 @@ var (
 		},
 		{
 			"2012-04-05 17:51:26     local4.info     172.23.0.1      %asa-6-302016: teardown udp connection 1315632 for inside:172.23.0.2/514 to identity:172.23.0.1/514 duration 0:09:23 bytes 7999",
-			"%time%%ipv4%:%integer%:%ipv4%/%integer%:%ipv4%/%integer%%integer%:%integer%:%integer%%integer%",
+			"%time%%ipv4%:%integer%:%ipv4%/%integer%:%ipv4%/%integer%%integer%",
 		},
 		{
 			"id=firewall time=\"2005-03-18 14:01:43\" fw=topsec priv=4 recorder=kernel type=conn policy=504 proto=tcp rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82",
@@ -79,8 +79,8 @@ var (
 	}
 
 	seqtests = []struct {
-		msg string
-		seq Sequence
+		data string
+		seq  Sequence
 	}{
 		{
 			"Jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root", Sequence{
@@ -305,11 +305,7 @@ var (
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "/"},
 				Token{Type: TokenInteger, Field: FieldUnknown, Value: "514"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "duration"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "0"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: ":"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "09"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: ":"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "23"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "0:09:23"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "bytes"},
 				Token{Type: TokenInteger, Field: FieldUnknown, Value: "7999"},
 			},
@@ -669,6 +665,30 @@ var (
 			},
 		},
 
+		{
+			"Feb 06 13:37:00 box sshd[4388]: Accepted publickey for cryptix from dead:beef:1234:5678:223:32ff:feb1:2e50 port 58251 ssh2: RSA de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Feb 06 13:37:00", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "box", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "sshd", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "4388", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Accepted", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "publickey", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "for", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "cryptix", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "from", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv6, Value: "dead:beef:1234:5678:223:32ff:feb1:2e50", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "port", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "58251", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "ssh2", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "RSA", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", isKey: false, isValue: false},
+			},
+		},
+
 		// {
 		// 	"%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method/10%", Sequence{
 		// 		Token{Type: TokenTime, Field: FieldMsgTime, Value: "%msgtime%"},
@@ -695,16 +715,66 @@ var (
 		// 	},
 		// },
 	}
+
+	hextests = []struct {
+		data  string
+		valid bool
+	}{
+		{"f0::1", true},
+		{"f0f0::1", true},
+		{"1:2:3:4:5:6:1:2", true},
+		{"0:0:0:0:0:0:0:0", true},
+		{"1:2:3:4:5::7:8", true},
+		{"f0f0::f:1", true},
+		{"f0f0:f::1", true},
+		{"f0::1", true},
+		{"::2:3:4", true},
+		{"0:0:0:0:0:0:0:5", true},
+		{"::5", true},
+		{"ABC:567:0:0:8888:9999:1111:0", true},
+		{"ABC:567::8888:9999:1111:0", true},
+		{"ABC:567::8888:9999:1111:0 ", true}, // space at the end
+		{"ABC::567::891::00", false},
+		{":::00", false},
+		{"00:04:c1:8b:d8:82", true},
+		{"de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", true},
+		{"00:0b:5f:b2:1d:80", true},
+		{"00:04:c1:8b:d8:82", true},
+		{"00:04:c1:8b:d8:82 ", true}, // space at end
+		{"0:09:23 ", true},
+		{"g:09:23 ", false},
+		{"dead:beef:1234:5678:223:32ff:feb1:2e50", true},
+		{"12345:32432:3232", false},
+	}
 )
+
+func TestMessageScanHexString(t *testing.T) {
+	msg := &Message{}
+
+	for _, tc := range hextests {
+		var valid, stop bool
+
+		msg.resetHexStates()
+
+		for i, r := range tc.data {
+			valid, stop = msg.hexStep(i, r)
+			if stop {
+				break
+			}
+		}
+		valid = valid && msg.state.hexSuccColonsSeries < 2 && msg.state.hexMaxSuccColons < 3
+		require.Equal(t, tc.valid, valid, tc.data)
+	}
+}
 
 func TestMessageSignature(t *testing.T) {
 	msg := &Message{}
 
 	for _, tc := range sigtests {
 		//msg.SetData(tc.msg)
-		seq, err := msg.Tokenize(tc.msg)
+		seq, err := msg.Tokenize(tc.data)
 		require.NoError(t, err)
-		require.Equal(t, tc.sig, seq.Signature(), tc.msg+"\n"+seq.PrintTokens())
+		require.Equal(t, tc.sig, seq.Signature(), tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
@@ -712,10 +782,9 @@ func TestMessageTokenize(t *testing.T) {
 	msg := &Message{}
 
 	for _, tc := range seqtests {
-		seq, err := msg.Tokenize(tc.msg)
+		seq, err := msg.Tokenize(tc.data)
 		require.NoError(t, err)
-		require.Equal(t, tc.seq, seq, tc.msg)
-		//glog.Debugln(seq.PrintTokens())
+		require.Equal(t, tc.seq, seq, tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
@@ -723,6 +792,6 @@ func BenchmarkMessageOne(b *testing.B) {
 	msg := &Message{}
 
 	for i := 0; i < b.N; i++ {
-		msg.Tokenize(sigtests[0].msg)
+		msg.Tokenize(sigtests[0].data)
 	}
 }

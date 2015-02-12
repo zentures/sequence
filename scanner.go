@@ -60,13 +60,30 @@ type Message struct {
 		// cursor positions
 		cur, start, end int
 
-		// should the next token be a value?
-		nextisValue bool
-
-		// how far from the = is the value, immediate following is 0
-		valueDistance int
+		hexState            int  // Current hex string state
+		hexStart            bool // Is the first char a :?
+		hexColons           int  // Total number of colons
+		hexSuccColons       int  // The current number of successive colons
+		hexMaxSuccColons    int  // Maximum number of successive colons
+		hexSuccColonsSeries int  // Number of successive colon series
 	}
 }
+
+const (
+	hsStart = iota
+	hsChar1
+	hsChar2
+	hsColon
+)
+
+const (
+	hexStart = iota
+	hexChar1
+	hexChar2
+	hexChar3
+	hexChar4
+	hexColon
+)
 
 func (this *Message) SetData(s string) {
 	this.data = s
@@ -191,12 +208,14 @@ func (this *Message) Scan() (Token, error) {
 		}
 
 		// remove any trailing spaces
+		s := 0 // trail space count
 		for this.data[this.state.start+l-1] == ' ' && l > 0 {
 			l--
+			s++
 		}
 
 		v := this.data[this.state.start : this.state.start+l]
-		this.state.start += l
+		this.state.start += l + s
 
 		token := Token{Type: t, Value: v, Field: FieldUnknown}
 
@@ -234,21 +253,20 @@ func (this *Message) skipSpace(data string) int {
 
 func (this *Message) scanToken(data string) (int, TokenType, error) {
 	var (
-		tnode                      *timeNode = timeFsmRoot
-		timeStop, macStop, macType bool
-		timeLen, tokenLen          int
-		l                          = len(data)
+		tnode                       *timeNode = timeFsmRoot
+		timeStop, hexStop, hexValid bool
+		timeLen, hexLen, tokenLen   int
+		l                           = len(data)
 	)
 
 	this.state.dots = 0
 	this.state.tokenType = TokenUnknown
 	this.state.tokenStop = false
+	this.resetHexStates()
 
-	// short circuit the mac check
-	// positions 2,5,8,11,14 must be ':'
-	if l < 17 || data[2] != ':' || data[14] != ':' {
-		macStop = true
-		macType = false
+	// short circuit the time check
+	if l < 3 {
+		hexStop = true
 	}
 
 	// short circuit the time check
@@ -265,11 +283,11 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 			}
 		}
 
-		if !macStop {
-			macType, macStop = this.macStep(i, r)
+		if !hexStop {
+			hexValid, hexStop = this.hexStep(i, r)
 
-			if macType && macStop {
-				return i + 1, TokenMac, nil
+			if hexValid {
+				hexLen = i + 1
 			}
 		}
 
@@ -287,7 +305,23 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 			}
 		}
 
-		if this.state.tokenStop && timeStop && macStop {
+		//glog.Debugf("i=%d, r=%c, tokenStop=%t, timeStop=%t, hexStop=%t", i, r, this.state.tokenStop, timeStop, hexStop)
+		// This means either we found something, or we have exhausted the string
+		if (this.state.tokenStop && timeStop && hexStop) || i == l-1 {
+			if timeLen > 0 {
+				return timeLen, TokenTime, nil
+			} else if hexValid && this.state.hexColons > 1 {
+				if this.state.hexColons == 5 && this.state.hexMaxSuccColons == 1 {
+					return hexLen, TokenMac, nil
+				} else if this.state.hexSuccColonsSeries == 1 ||
+					(this.state.hexColons == 7 && this.state.hexSuccColonsSeries == 0) {
+
+					return hexLen, TokenIPv6, nil
+				} else {
+					return hexLen, TokenLiteral, nil
+				}
+			}
+
 			// If token length is 0, it means we didn't find time, nor did we find
 			// a word, it cannot be space since we skipped all space. This means it
 			// is a single character literal, so return that.
@@ -297,10 +331,6 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 				return tokenLen, this.state.tokenType, nil
 			}
 		}
-	}
-
-	if timeLen > 0 {
-		return timeLen, TokenTime, nil
 	}
 
 	return len(data), this.state.tokenType, nil
@@ -497,59 +527,119 @@ func (this *Message) tokenStep(index int, r rune) {
 	}
 }
 
-// Returns bool, bool, first one is true if the it's a mac type, second is whether to stop scanning
-func (this *Message) macStep(index int, r rune) (bool, bool) {
-	switch {
-	case index == 0 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+// hexStep steps through a string and try to match a hex string of the format
+// - dead:beef:1234:5678:223:32ff:feb1:2e50 (ipv6 address)
+// - de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56 (mac address)
+// - 0:09:36 (literal)
+// - f0f0:f::1 (ipv6)
+// - and a few others in the scanner_test.go/hextests list
+//
+// The ipv6 rules are:
+// (http://computernetworkingnotes.com/ipv6-features-concepts-and-configurations/ipv6-address-types-and-formats.html)
+// - Whereas IPv4 addresses use a dotted-decimal format, where each byte ranges from
+//   0 to 255.
+// - IPv6 addresses use eight sets of four hexadecimal addresses (16 bits in each set),
+//   separated by a colon (:), like this: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
+//   (x would be a hexadecimal value). This notation is commonly called string notation.
+// - Hexadecimal values can be displayed in either lower- or upper-case for the numbers
+//   A–F.
+// - A leading zero in a set of numbers can be omitted; for example, you could either
+//   enter 0012 or 12 in one of the eight fields—both are correct.
+// - If you have successive fields of zeroes in an IPv6 address, you can represent
+//   them as two colons (::). For example,0:0:0:0:0:0:0:5 could be represented as ::5;
+//   and ABC:567:0:0:8888:9999:1111:0 could be represented asABC:567::8888:9999:1111:0.
+//   However, you can only do this once in the address: ABC::567::891::00 would be
+//   invalid since ::appears more than once in the address. The reason for this
+//   limitation is that if you had two or more repetitions, you wouldn’t know how many
+//   sets of zeroes were being omitted from each part. An unspecified address is
+//   represented as ::, since it contains all zeroes.
+//
+// first return value indicates whether this is a valid hex string
+// second return value indicates whether to stop scanning
+func (this *Message) hexStep(i int, r rune) (bool, bool) {
+	switch this.state.hexState {
+	case hexStart:
+		switch {
+		case isHex(r):
+			this.state.hexState = hexChar1
 
-	case index == 1 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+		case r == ':':
+			this.state.hexState = hexColon
+			this.state.hexColons++
+			this.state.hexSuccColons++
+			this.state.hexStart = true
+			this.state.hexState = hexColon
 
-	case index == 2 && r == ':':
-		return true, false
+			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
+				this.state.hexMaxSuccColons = this.state.hexSuccColons
+			}
 
-	case index == 3 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+		default:
+			return false, true
+		}
 
-	case index == 4 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+		return false, false
 
-	case index == 5 && r == ':':
-		return true, false
+	case hexColon:
+		switch {
+		case isHex(r):
+			this.state.hexState = hexChar1
+			this.state.hexSuccColons = 0
 
-	case index == 6 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+			if this.state.hexColons > 0 {
+				return true, false
+			}
 
-	case index == 7 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+		case r == ':':
+			this.state.hexSuccColons++
+			this.state.hexColons++
 
-	case index == 8 && r == ':':
-		return true, false
+			if this.state.hexSuccColons == 2 {
+				this.state.hexSuccColonsSeries++
+			}
 
-	case index == 9 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
+				this.state.hexMaxSuccColons = this.state.hexSuccColons
+			}
 
-	case index == 10 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+			this.state.hexState = hexColon
 
-	case index == 11 && r == ':':
-		return true, false
+		default:
+			if this.state.hexColons > 0 && unicode.IsSpace(r) {
+				return true, true
+			}
+			return false, true
+		}
 
-	case index == 12 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+		return false, false
 
-	case index == 13 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+	case hexChar1, hexChar2, hexChar3, hexChar4:
+		switch {
+		case this.state.hexState != hexChar4 && isHex(r):
+			this.state.hexState++
+			this.state.hexSuccColons = 0
 
-	case index == 14 && r == ':':
-		return true, false
+		case r == ':':
+			this.state.hexState = hexColon
+			this.state.hexColons++
+			this.state.hexSuccColons++
 
-	case index == 15 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, false
+			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
+				this.state.hexMaxSuccColons = this.state.hexSuccColons
+			}
 
-	case index == 16 && (r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'):
-		return true, true
+		default:
+			if this.state.hexColons > 0 && unicode.IsSpace(r) {
+				return true, true
+			}
+			return false, true
+		}
+
+		if this.state.hexColons > 0 {
+			return true, false
+		}
+
+		return false, false
 	}
 
 	return false, true
@@ -566,12 +656,27 @@ func (this *Message) reset() {
 	this.state.start = 0
 	this.state.end = len(this.data)
 	this.state.cur = 0
+
+	this.resetHexStates()
 }
 
-func isLetter(ch rune) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch)
+func (this *Message) resetHexStates() {
+	this.state.hexState = hsStart
+	this.state.hexStart = false
+	this.state.hexColons = 0
+	this.state.hexSuccColons = 0
+	this.state.hexMaxSuccColons = 0
+	this.state.hexSuccColonsSeries = 0
+}
+
+func isLetter(r rune) bool {
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r == '_' || r >= 0x80 && unicode.IsLetter(r)
 }
 
 func isLiteral(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?'
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?'
+}
+
+func isHex(r rune) bool {
+	return r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'
 }

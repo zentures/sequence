@@ -72,6 +72,10 @@ var (
 			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max cache size 1 at Jan 31 21:39:37",
 			"%msgtime% %apphost% %appname% [ %integer% ] : statistics : max cache size %integer% at %time%",
 		},
+		{
+			"Feb 06 13:37:00 box sshd[4388]: Accepted publickey for cryptix from dead:beef:1234:5678:223:32ff:feb1:2e50 port 58251 ssh2: RSA de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56",
+			"%msgtime% %apphost% %appname% [ %sessionid% ] : accepted publickey for %dstuser% from %srcipv6% port %integer% ssh2 : rsa %string%",
+		},
 	}
 
 	parsetests2 = []struct {
