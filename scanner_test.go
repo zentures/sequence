@@ -749,7 +749,7 @@ var (
 )
 
 func TestMessageScanHexString(t *testing.T) {
-	msg := &Message{}
+	msg := &message{}
 
 	for _, tc := range hextests {
 		var valid, stop bool
@@ -767,31 +767,24 @@ func TestMessageScanHexString(t *testing.T) {
 	}
 }
 
-func TestMessageSignature(t *testing.T) {
-	msg := &Message{}
-
+func TestGeneralScannerSignature(t *testing.T) {
 	for _, tc := range sigtests {
-		//msg.SetData(tc.msg)
-		seq, err := msg.Tokenize(tc.data)
+		seq, err := DefaultScanner.Tokenize(tc.data)
 		require.NoError(t, err)
 		require.Equal(t, tc.sig, seq.Signature(), tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
-func TestMessageTokenize(t *testing.T) {
-	msg := &Message{}
-
+func TestGeneralScannerTokenize(t *testing.T) {
 	for _, tc := range seqtests {
-		seq, err := msg.Tokenize(tc.data)
+		seq, err := DefaultScanner.Tokenize(tc.data)
 		require.NoError(t, err)
 		require.Equal(t, tc.seq, seq, tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
-func BenchmarkMessageOne(b *testing.B) {
-	msg := &Message{}
-
+func BenchmarkGeneralScannerOne(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		msg.Tokenize(sigtests[0].data)
+		DefaultScanner.Tokenize(sigtests[0].data)
 	}
 }

@@ -96,12 +96,16 @@ func TestParserMatchPatterns(t *testing.T) {
 	parser := NewParser()
 
 	for _, tc := range parsetests {
-		err := parser.Add(tc.rule)
+		seq, err := DefaultScanner.Tokenize(tc.rule)
+		require.NoError(t, err)
+		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests {
-		seq, err := parser.Parse(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		seq, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)
 		require.Equal(t, tc.rule, seq.String(), seq.PrintTokens())
 	}
@@ -111,22 +115,17 @@ func TestParserParseMessages(t *testing.T) {
 	parser := NewParser()
 
 	for _, tc := range parsetests2 {
-		err := parser.Add(tc.rule)
+		seq, err := DefaultScanner.Tokenize(tc.rule)
+		require.NoError(t, err)
+		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests2 {
-		_, err := parser.Parse(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		_, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)
 		//glog.Debugln(seq.PrintTokens())
-	}
-}
-
-func BenchmarkParser(b *testing.B) {
-	parser := NewParser()
-	parser.Add(parsetests[0].rule)
-
-	for i := 0; i < b.N; i++ {
-		parser.Parse(parsetests[0].msg)
 	}
 }

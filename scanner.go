@@ -15,84 +15,34 @@
 package sequence
 
 import (
-	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"unicode"
 )
 
+type Scanner interface {
+	Tokenize(s string) (Sequence, error)
+}
+
+// GeneralScanner is a sequential lexical analyzer that breaks a log message into a
+// sequence of tokens. It is sequential because it goes through log message
+// sequentially tokentizing each part of the message, without the use of regular
+// expressions. The scanner currently recognizes time stamps, IPv4 addresses, URLs,
+// MAC addresses, integers and floating point numbers.
+type GeneralScanner struct {
+	initOnce sync.Once
+	tokens   Sequence
+}
+
 var (
-	ErrNegativeAdvance = errors.New("sequence: negative advance count")
-	ErrAdvanceTooFar   = errors.New("sequence: advance count beyond input")
-	ErrUnknownToken    = errors.New("sequence: unknown token encountered")
-	ErrNoMatch         = errors.New("sequence: no pattern matched for this message")
-	ErrInvalidCount    = errors.New("sequence: invalid count for field token")
+	_              Scanner = (*GeneralScanner)(nil)
+	DefaultScanner         = &GeneralScanner{}
 )
-
-// Message is a sequential lexical analyzer that breaks a log message into a sequence
-// of tokens. It is sequential because it goes through log message sequentially
-// tokentizing each part of the message, without the use of regular expressions.
-// The scanner currently recognizes time stamps, IPv4 addresses, URLs, MAC addresses,
-// integers and floating point numbers.
-type Message struct {
-	data   string
-	tokens Sequence
-
-	state struct {
-		// these are per token states
-		tokenType TokenType
-		tokenStop bool
-		dots      int
-
-		// these are per message states
-		prevToken Token
-
-		// Are we inside a quote such as ", ', <, [
-		inquote bool
-
-		// Which quote character is it?
-		chquote rune
-
-		// Should the next quote be an open quote?
-		// See special case in scan()
-		nxquote bool
-
-		// cursor positions
-		cur, start, end int
-
-		hexState            int  // Current hex string state
-		hexStart            bool // Is the first char a :?
-		hexColons           int  // Total number of colons
-		hexSuccColons       int  // The current number of successive colons
-		hexMaxSuccColons    int  // Maximum number of successive colons
-		hexSuccColonsSeries int  // Number of successive colon series
-	}
-}
-
-const (
-	hsStart = iota
-	hsChar1
-	hsChar2
-	hsColon
-)
-
-const (
-	hexStart = iota
-	hexChar1
-	hexChar2
-	hexChar3
-	hexChar4
-	hexColon
-)
-
-func (this *Message) SetData(s string) {
-	this.data = s
-
-	// Reset the message states
-	this.reset()
-}
 
 // Tokenize returns a Sequence, or a list of tokens, for the data string supplied.
+// The returned Sequence is only valid until the next time Tokenize() is called.
+//
 // For example, the following message
 //
 //   Jan 12 06:49:42 irc sshd[7034]: Failed password for root from 218.161.81.238 port 4228 ssh2
@@ -172,27 +122,80 @@ func (this *Message) SetData(s string) {
 // 		Token{TokenLiteral, FieldUnknown, "="},
 // 		Token{TokenMac, FieldUnknown, "00:04:c1:8b:d8:82"},
 // 	}
-func (this *Message) Tokenize(s string) (Sequence, error) {
-	this.SetData(s)
+func (this *GeneralScanner) Tokenize(s string) (Sequence, error) {
+	this.initOnce.Do(func() {
+		this.tokens = make(Sequence, 0, 20)
+	})
+
+	msg := &message{
+		data:   s,
+		tokens: this.tokens[:0],
+	}
+
+	msg.reset()
 
 	var err error
 
-	for _, err = this.Scan(); err == nil; _, err = this.Scan() {
+	for _, err = msg.scan(); err == nil; _, err = msg.scan() {
 	}
 
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
+	this.tokens = msg.tokens
+	msg.data = ""
+	msg.tokens = nil
+
 	return this.tokens, nil
 }
 
-func (this *Message) Sequence() Sequence {
-	return this.tokens
+type message struct {
+	data   string
+	tokens Sequence
+
+	state struct {
+		// these are per token states
+		tokenType TokenType
+		tokenStop bool
+		dots      int
+
+		// these are per message states
+		prevToken Token
+
+		// Are we inside a quote such as ", ', <, [
+		inquote bool
+
+		// Which quote character is it?
+		chquote rune
+
+		// Should the next quote be an open quote?
+		// See special case in scan()
+		nxquote bool
+
+		// cursor positions
+		cur, start, end int
+
+		hexState            int  // Current hex string state
+		hexStart            bool // Is the first char a :?
+		hexColons           int  // Total number of colons
+		hexSuccColons       int  // The current number of successive colons
+		hexMaxSuccColons    int  // Maximum number of successive colons
+		hexSuccColonsSeries int  // Number of successive colon series
+	}
 }
 
+const (
+	hexStart = iota
+	hexChar1
+	hexChar2
+	hexChar3
+	hexChar4
+	hexColon
+)
+
 // Scan is similar to Tokenize except it returns one token at a time
-func (this *Message) Scan() (Token, error) {
+func (this *message) scan() (Token, error) {
 	if this.state.start < this.state.end {
 		// Number of spaces skipped
 		nss := this.skipSpace(this.data[this.state.start:])
@@ -236,7 +239,7 @@ func (this *Message) Scan() (Token, error) {
 	return Token{}, io.EOF
 }
 
-func (this *Message) skipSpace(data string) int {
+func (this *message) skipSpace(data string) int {
 	// Skip leading spaces.
 	i := 0
 
@@ -251,7 +254,7 @@ func (this *Message) skipSpace(data string) int {
 	return i
 }
 
-func (this *Message) scanToken(data string) (int, TokenType, error) {
+func (this *message) scanToken(data string) (int, TokenType, error) {
 	var (
 		tnode                       *timeNode = timeFsmRoot
 		timeStop, hexStop, hexValid bool
@@ -336,7 +339,7 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 	return len(data), this.state.tokenType, nil
 }
 
-func (this *Message) tokenStep(index int, r rune) {
+func (this *message) tokenStep(index int, r rune) {
 	switch {
 	case this.state.tokenType == TokenURL:
 		if (index == 1 && (r == 't' || r == 'T')) ||
@@ -556,7 +559,7 @@ func (this *Message) tokenStep(index int, r rune) {
 //
 // first return value indicates whether this is a valid hex string
 // second return value indicates whether to stop scanning
-func (this *Message) hexStep(i int, r rune) (bool, bool) {
+func (this *message) hexStep(i int, r rune) (bool, bool) {
 	switch this.state.hexState {
 	case hexStart:
 		switch {
@@ -645,8 +648,7 @@ func (this *Message) hexStep(i int, r rune) (bool, bool) {
 	return false, true
 }
 
-func (this *Message) reset() {
-	this.tokens = make(Sequence, 0, 20)
+func (this *message) reset() {
 	this.state.tokenType = TokenUnknown
 	this.state.tokenStop = false
 	this.state.dots = 0
@@ -660,8 +662,8 @@ func (this *Message) reset() {
 	this.resetHexStates()
 }
 
-func (this *Message) resetHexStates() {
-	this.state.hexState = hsStart
+func (this *message) resetHexStates() {
+	this.state.hexState = hexStart
 	this.state.hexStart = false
 	this.state.hexColons = 0
 	this.state.hexSuccColons = 0

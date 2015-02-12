@@ -82,7 +82,9 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	atree := NewAnalyzer()
 
 	for _, data := range analyzerSshdSamples {
-		err := atree.Add(data)
+		seq, err := DefaultScanner.Tokenize(data)
+		require.NoError(t, err)
+		err = atree.Add(seq)
 		require.NoError(t, err)
 	}
 
@@ -203,7 +205,9 @@ func TestAnalyzerKeyValuePairs(t *testing.T) {
 	atree := NewAnalyzer()
 
 	for _, tc := range analyzerKVTests {
-		err := atree.Add(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
 	}
 
@@ -241,25 +245,33 @@ func TestAnalyzerMatchPatterns(t *testing.T) {
 	atree := NewAnalyzer()
 
 	for _, tc := range analyzerSshTests {
-		err := atree.Add(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
 	}
 
 	for _, tc := range analyzerKVTests {
-		err := atree.Add(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
 	}
 
 	atree.Finalize()
 
 	for _, tc := range analyzerSshTests {
-		seq, err := atree.Analyze(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
 		require.Equal(t, tc.pat, seq.String(), tc.msg)
 	}
 
 	for _, tc := range analyzerKVTests {
-		seq, err := atree.Analyze(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
+		require.NoError(t, err)
+		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
 		require.Equal(t, tc.pat, seq.String(), tc.msg)
 	}

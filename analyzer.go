@@ -125,12 +125,8 @@ func (this *analyzerNode) String() string {
 
 // Analyze analyzes the message sequence supplied, and returns the unique pattern
 // that will match this message.
-func (this *Analyzer) Analyze(s string) (Sequence, error) {
-	seq, err := (&Message{}).Tokenize(s)
-	if err != nil {
-		return nil, err
-	}
-
+//func (this *Analyzer) Analyze(s string) (Sequence, error) {
+func (this *Analyzer) Analyze(seq Sequence) (Sequence, error) {
 	this.mu.RLock()
 	defer this.mu.RUnlock()
 
@@ -154,16 +150,12 @@ func (this *Analyzer) Analyze(s string) (Sequence, error) {
 // Add adds a single message sequence to the analysis tree. It will not determine
 // if the tokens share a common parent or child at this point. After all the sequences
 // are added, then Finalize() should be called.
-func (this *Analyzer) Add(s string) error {
-	seq, err := (&Message{}).Tokenize(s)
-	if err != nil {
-		return err
-	}
-
-	seq = markSequenceKV(seq)
-
+//func (this *Analyzer) Add(s string) error {
+func (this *Analyzer) Add(seq Sequence) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
+
+	seq = markSequenceKV(seq)
 
 	// Add enough levels to support the depth of the token list
 	if l := len(seq) - len(this.levels) + 1; l > 0 {

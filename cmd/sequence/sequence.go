@@ -319,8 +319,7 @@ func profile() {
 }
 
 func scan(cmd *cobra.Command, args []string) {
-	msg := &sequence.Message{}
-	seq, err := msg.Tokenize(inmsg)
+	seq, err := sequence.DefaultScanner.Tokenize(inmsg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -350,8 +349,13 @@ func analyze(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		if _, err := parser.Parse(line); err != nil {
-			analyzer.Add(line)
+		seq, err := sequence.DefaultScanner.Tokenize(line)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if _, err := parser.Parse(seq); err != nil {
+			analyzer.Add(seq)
 		}
 	}
 
@@ -374,7 +378,12 @@ func analyze(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		pseq, err := parser.Parse(line)
+		seq, err := sequence.DefaultScanner.Tokenize(line)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		pseq, err := parser.Parse(seq)
 		if err == nil {
 			pat := pseq.String()
 			sig := pseq.Signature()
@@ -383,7 +392,7 @@ func analyze(cmd *cobra.Command, args []string) {
 			}
 			pmap[pat][sig] = line
 		} else {
-			aseq, err := analyzer.Analyze(line)
+			aseq, err := analyzer.Analyze(seq)
 			if err != nil {
 				log.Printf("Error parsing: %s", line)
 			} else {
@@ -444,7 +453,12 @@ func parse(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		pseq, err := parser.Parse(line)
+		seq, err := sequence.DefaultScanner.Tokenize(line)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		pseq, err := parser.Parse(seq)
 		if err != nil {
 			log.Printf("Error (%s) parsing: %s", err, line)
 		} else {
@@ -485,25 +499,39 @@ func bench(cmd *cobra.Command, args []string) {
 
 	now := time.Now()
 
-	msgpipe := make(chan string, 10000)
-	var wg sync.WaitGroup
-
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for line := range msgpipe {
-				parser.Parse(line)
+	if workers == 1 {
+		for _, line := range lines {
+			seq, err := sequence.DefaultScanner.Tokenize(line)
+			if err != nil {
+				log.Fatal(err)
 			}
-		}()
-	}
+			parser.Parse(seq)
+		}
+	} else {
+		var wg sync.WaitGroup
+		msgpipe := make(chan string, 10000)
 
-	for _, line := range lines {
-		msgpipe <- line
-	}
-	close(msgpipe)
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for line := range msgpipe {
+					seq, err := sequence.DefaultScanner.Tokenize(line)
+					if err != nil {
+						log.Fatal(err)
+					}
+					parser.Parse(seq)
+				}
+			}()
+		}
 
-	wg.Wait()
+		for _, line := range lines {
+			msgpipe <- line
+		}
+		close(msgpipe)
+
+		wg.Wait()
+	}
 
 	since := time.Since(now)
 	log.Printf("Parsed %d messages in %.2f secs, ~ %.2f msgs/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)))
@@ -534,7 +562,12 @@ func buildParser() *sequence.Parser {
 				continue
 			}
 
-			if err := parser.Add(line); err != nil {
+			seq, err := sequence.DefaultScanner.Tokenize(line)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			if err := parser.Add(seq); err != nil {
 				log.Fatal(err)
 			}
 		}

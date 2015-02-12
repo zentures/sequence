@@ -74,12 +74,8 @@ func (this *parseNode) String() string {
 
 // Add will add a single pattern sequence to the parser tree. This effectively
 // builds the parser tree so it can be used for parsing later.
-func (this *Parser) Add(s string) error {
-	seq, err := (&Message{}).Tokenize(s)
-	if err != nil {
-		return err
-	}
-
+//func (this *Parser) Add(s string) error {
+func (this *Parser) Add(seq Sequence) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -166,11 +162,10 @@ func (this *Parser) Add(s string) error {
 
 // Parse will take the message sequence supplied and go through the parser tree to
 // find the matching pattern sequence. If found, the pattern sequence is returned.
-func (this *Parser) Parse(s string) (Sequence, error) {
-	seq, err := (&Message{}).Tokenize(s)
-	if err != nil {
-		return nil, err
-	}
+//func (this *Parser) Parse(s string) (Sequence, error) {
+func (this *Parser) Parse(seq Sequence) (Sequence, error) {
+	this.mu.RLock()
+	defer this.mu.RUnlock()
 
 	for i, t := range seq {
 		if t.Type == TokenLiteral {
@@ -179,9 +174,6 @@ func (this *Parser) Parse(s string) (Sequence, error) {
 	}
 
 	//glog.Debugln(seq.PrintTokens())
-
-	this.mu.RLock()
-	defer this.mu.RUnlock()
 
 	var (
 		cur stackParseNode

@@ -15,12 +15,17 @@
 package sequence
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
 
 //go:generate go run gentokens.go -- tokens.go
 //go:generate go fmt tokens.go
+
+var (
+	ErrNoMatch = errors.New("sequence: no pattern matched for this message")
+)
 
 // Sequence represents a list of tokens returned from the scanner, analyzer or parser.
 type Sequence []Token

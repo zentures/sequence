@@ -244,10 +244,8 @@ var (
 )
 
 func TestAnalyzeSequence(t *testing.T) {
-	msg := &Message{}
-
 	for _, tc := range seqAnalyzeTests {
-		seq, err := msg.Tokenize(tc.msg)
+		seq, err := DefaultScanner.Tokenize(tc.msg)
 		require.NoError(t, err)
 		seq = analyzeSequence(seq)
 		//glog.Debugln(seq.PrintTokens())
