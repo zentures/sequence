@@ -3,9 +3,11 @@ sequence
 
 [![GoDoc](http://godoc.org/github.com/strace/sequence?status.svg)](http://godoc.org/github.com/strace/sequence) 
 
-[![GoDoc](http://godoc.org/github.com/strace/sequence/sequence?status.svg)](http://godoc.org/github.com/strace/sequence/sequence)
+[![GoDoc](http://godoc.org/github.com/strace/sequence/cmd/sequence?status.svg)](http://godoc.org/github.com/strace/sequence/cmd/sequence)
 
-`sequence` is a _high performance sequential log parser_. It _sequentially_ goes through a log message, _parses_ out the meaningful parts, without the use regular expressions. It can achieve _high performance_ parsing of **100,000 - 200,000 messages per second (MPS)** without the need to separate parsing rules by log source type.
+[Additional Details](http://strace.io/sequence/)
+
+`sequence` is a _high performance sequential log scanner, analyzer and parser_. It _sequentially_ goes through a log message, _parses_ out the meaningful parts, without the use regular expressions. It can achieve _high performance_ parsing of **100,000 - 200,000 messages per second (MPS)** without the need to separate parsing rules by log source type.
 
 **`sequence` is currently under active development and should be considered unstable until further notice.**
 
@@ -32,26 +34,33 @@ Sequence is developed to make analyzing and parsing log messages a lot easier an
 The following performance benchmarks are run on a single 4-core (2.8Ghz i7) MacBook Pro, although the tests were only using 1 or 2 cores. The first file is a bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes per message. Last is a mix of ASA, sshd and sudo logs, averaging 136 bytes per message.
 
 ```
-  $ ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all
+  $ ./sequence bench scan -i ../../data/sshd.all
+  Scanned 212897 messages in 0.78 secs, ~ 272869.35 msgs/sec
+
+  $ ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all
   Parsed 212897 messages in 1.69 secs, ~ 126319.27 msgs/sec
 
-  $ ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log
+  $ ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log
   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
 
-  $ ./sequence bench -d ../patterns -i ../data/asasshsudo.log
+  $ ./sequence bench parse -d ../patterns -i ../data/asasshsudo.log
   Parsed 447745 messages in 4.47 secs, ~ 100159.65 msgs/sec
 ```
 
 Performance can be improved by adding more cores:
 
+
 ```
-  GOMAXPROCS=2 ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
+  $ GOMAXPROCS=2 ./sequence bench scan -i ../../data/sshd.all -w 2
+  Scanned 212897 messages in 0.43 secs, ~ 496961.52 msgs/sec
+
+  GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
   Parsed 212897 messages in 1.00 secs, ~ 212711.83 msgs/sec
 
-  $ GOMAXPROCS=2 ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
+  $ GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
 
-  $ GOMAXPROCS=2 ./sequence bench -d ../patterns -i ../data/asasshsudo.log -w 2
+  $ GOMAXPROCS=2 ./sequence bench parse -d ../patterns -i ../data/asasshsudo.log -w 2
   Parsed 447745 messages in 2.52 secs, ~ 177875.94 msgs/sec
 ```
 
@@ -79,7 +88,7 @@ go run sequence.go
 
 ### Documentation
 
-Documentation is available at godoc: [package](http://godoc.org/github.com/strace/sequence), [command](http://godoc.org/github.com/strace/sequence/sequence).
+Documentation is available at godoc: [package](http://godoc.org/github.com/strace/sequence), [command](http://godoc.org/github.com/strace/sequence/cmd/sequence).
 
 ### License
 
@@ -122,7 +131,7 @@ integers and floating point numbers.
 
 ## Sequence Command
 
-The `sequence` command is developed to demonstrate the use of this package. You can find it in the `sequence` directory. The `sequence` command implements the _sequential semantic log parser_.
+The `sequence` command is developed to demonstrate the use of this package. You can find it in the `sequence` directory. The `sequence` command implements the _sequential log scanner, analyzer and parser_.
 
 ```
    Usage:
@@ -133,6 +142,8 @@ The `sequence` command is developed to demonstrate the use of this package. You 
      analyze                   analyze will analyze a log file and output a list of patterns that will match all the log messages
      parse                     parse will parse a log file and output a list of parsed tokens for each of the log messages
      bench                     benchmark the parsing of a log file, no output is provided
+       scan                    benchmark the scanning of a log file, no output is provided
+       parse                   benchmark the parsing of a log file, no output is provided
      help [command]            Help about any command
 ```
 
@@ -282,7 +293,23 @@ This is an entry from the output file:
 
 ```
   Usage:
-    sequence bench [flags]
+    sequence bench [command]
+
+  Available Commands:
+    scan                      benchmark the scanning of a log file, no output is provided
+    parse                     benchmark the parsing of a log file, no output is provided
+
+  Usage:
+    sequence bench scan [flags]
+
+   Available Flags:
+    -c, --cpuprofile="": CPU profile filename
+    -h, --help=false: help for bench
+    -i, --infile="": input file, required
+    -w, --workers=1: number of parsing workers
+
+  Usage:
+    sequence bench parse [flags]
 
    Available Flags:
     -c, --cpuprofile="": CPU profile filename
@@ -293,24 +320,35 @@ This is an entry from the output file:
     -w, --workers=1: number of parsing workers
 ```
 
-The following command will benchmark the parsing of two files. First file is a
-bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA
-log file, averaging 180 bytes per message.
+The following performance benchmarks are run on a single 4-core (2.8Ghz i7) MacBook Pro, although the tests were only using 1 or 2 cores. The first file is a bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes per message. Last is a mix of ASA, sshd and sudo logs, averaging 136 bytes per message.
 
 ```
-  $ ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all
+  $ ./sequence bench scan -i ../../data/sshd.all
+  Scanned 212897 messages in 0.78 secs, ~ 272869.35 msgs/sec
+
+  $ ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all
   Parsed 212897 messages in 1.69 secs, ~ 126319.27 msgs/sec
 
-  $ ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log
+  $ ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log
   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
+
+  $ ./sequence bench parse -d ../patterns -i ../data/asasshsudo.log
+  Parsed 447745 messages in 4.47 secs, ~ 100159.65 msgs/sec
 ```
 
 Performance can be improved by adding more cores:
 
+
 ```
-  GOMAXPROCS=2 ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
+  $ GOMAXPROCS=2 ./sequence bench scan -i ../../data/sshd.all -w 2
+  Scanned 212897 messages in 0.43 secs, ~ 496961.52 msgs/sec
+
+  GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
   Parsed 212897 messages in 1.00 secs, ~ 212711.83 msgs/sec
 
-  $ GOMAXPROCS=2 ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
+  $ GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
+
+  $ GOMAXPROCS=2 ./sequence bench parse -d ../patterns -i ../data/asasshsudo.log -w 2
+  Parsed 447745 messages in 2.52 secs, ~ 177875.94 msgs/sec
 ```

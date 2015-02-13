@@ -27,7 +27,9 @@
 //      scan                      scan will tokenize a log file or message and output a list of tokens
 //      analyze                   analyze will analyze a log file and output a list of patterns that will match all the log messages
 //      parse                     parse will parse a log file and output a list of parsed tokens for each of the log messages
-//      bench                     benchmark the parsing of a log file, no output is provided
+//      bench                     benchmark scanning or parsing, no output is provided
+//		  scan                    benchmark the scanning of a log file, no output is provided
+// 		  parse                   benchmark the parsing of a log file, no output is provided
 //      help [command]            Help about any command
 //
 // ### Scan
@@ -165,7 +167,23 @@
 // ### Benchmark
 //
 //   Usage:
-//     sequence bench [flags]
+//	   sequence bench [command]
+//
+//	 Available Commands:
+//	   scan                      benchmark the scanning of a log file, no output is provided
+//     parse                     benchmark the parsing of a log file, no output is provided
+//
+//   Usage:
+//     sequence bench scan [flags]
+//
+//    Available Flags:
+//     -c, --cpuprofile="": CPU profile filename
+//     -h, --help=false: help for bench
+//     -i, --infile="": input file, required
+//     -w, --workers=1: number of parsing workers
+//
+//   Usage:
+//     sequence bench parse [flags]
 //
 //    Available Flags:
 //     -c, --cpuprofile="": CPU profile filename
@@ -175,22 +193,28 @@
 //     -p, --patfile="": pattern file, required
 //     -w, --workers=1: number of parsing workers
 //
-// The following command will benchmark the parsing of two files. First file is a
-// bunch of sshd logs, averaging 98 bytes per message. The second is a Cisco ASA
-// log file, averaging 180 bytes per message.
+// Following are some benchmark examples for two files. First file is a bunch of sshd logs,
+// averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes
+// per message.
 //
-//   $ ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all
+//   $ ./sequence bench scan -i ../../data/sshd.all
+//   Scanned 212897 messages in 0.78 secs, ~ 272869.35 msgs/sec
+//
+//   $ ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all
 //   Parsed 212897 messages in 1.69 secs, ~ 126319.27 msgs/sec
 //
-//   $ ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log
+//   $ ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log
 //   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
 //
 // Performance can be improved by adding more cores:
 //
-//   GOMAXPROCS=2 ./sequence bench -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
+//   $ GOMAXPROCS=2 ./sequence bench scan -i ../../data/sshd.all -w 2
+//   Scanned 212897 messages in 0.43 secs, ~ 496961.52 msgs/sec
+//
+//   GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
 //   Parsed 212897 messages in 1.00 secs, ~ 212711.83 msgs/sec
 //
-//   $ GOMAXPROCS=2 ./sequence bench -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
+//   $ GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
 //   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
 package main
 
@@ -235,6 +259,16 @@ var (
 
 	benchCmd = &cobra.Command{
 		Use:   "bench",
+		Short: "benchmark scanning or parsing of a log file, no output is provided",
+	}
+
+	benchScanCmd = &cobra.Command{
+		Use:   "scan",
+		Short: "benchmark the scanning of a log file, no output is provided",
+	}
+
+	benchParseCmd = &cobra.Command{
+		Use:   "parse",
 		Short: "benchmark the parsing of a log file, no output is provided",
 	}
 
@@ -269,12 +303,20 @@ func init() {
 	parseCmd.Flags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
 	parseCmd.Run = parse
 
-	benchCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
-	benchCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "pattern file, required")
-	benchCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
-	benchCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
-	benchCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
-	benchCmd.Run = bench
+	benchCmd.AddCommand(benchScanCmd)
+	benchCmd.AddCommand(benchParseCmd)
+
+	benchScanCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
+	benchScanCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
+	benchScanCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
+	benchScanCmd.Run = benchScan
+
+	benchParseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
+	benchParseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "pattern file, required")
+	benchParseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
+	benchParseCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
+	benchParseCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
+	benchParseCmd.Run = benchParse
 
 	sequenceCmd.AddCommand(scanCmd)
 	sequenceCmd.AddCommand(analyzeCmd)
@@ -472,7 +514,64 @@ func parse(cmd *cobra.Command, args []string) {
 	<-done
 }
 
-func bench(cmd *cobra.Command, args []string) {
+func benchScan(cmd *cobra.Command, args []string) {
+	if infile == "" {
+		log.Fatal("Invalid input file")
+	}
+
+	iscan, ifile := openFile(infile)
+	defer ifile.Close()
+
+	var lines []string
+	n := 0
+
+	for iscan.Scan() {
+		line := iscan.Text()
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+
+		n++
+		lines = append(lines, line)
+	}
+
+	profile()
+
+	now := time.Now()
+
+	if workers == 1 {
+		for _, line := range lines {
+			sequence.DefaultScanner.Tokenize(line)
+		}
+	} else {
+		var wg sync.WaitGroup
+		msgpipe := make(chan string, 10000)
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for line := range msgpipe {
+					sequence.DefaultScanner.Tokenize(line)
+				}
+			}()
+		}
+
+		for _, line := range lines {
+			msgpipe <- line
+		}
+		close(msgpipe)
+
+		wg.Wait()
+	}
+
+	since := time.Since(now)
+	log.Printf("Scanned %d messages in %.2f secs, ~ %.2f msgs/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)))
+	close(quit)
+	<-done
+}
+
+func benchParse(cmd *cobra.Command, args []string) {
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}

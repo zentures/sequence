@@ -136,7 +136,7 @@ func (this *GeneralScanner) Tokenize(s string) (Sequence, error) {
 
 	var err error
 
-	for _, err = msg.scan(); err == nil; _, err = msg.scan() {
+	for err = msg.scan(); err == nil; err = msg.scan() {
 	}
 
 	if err != nil && err != io.EOF {
@@ -195,7 +195,7 @@ const (
 )
 
 // Scan is similar to Tokenize except it returns one token at a time
-func (this *message) scan() (Token, error) {
+func (this *message) scan() error {
 	if this.state.start < this.state.end {
 		// Number of spaces skipped
 		nss := this.skipSpace(this.data[this.state.start:])
@@ -203,11 +203,11 @@ func (this *message) scan() (Token, error) {
 
 		l, t, err := this.scanToken(this.data[this.state.start:])
 		if err != nil {
-			return Token{}, err
+			return err
 		} else if l == 0 {
-			return Token{}, io.EOF
+			return io.EOF
 		} else if t == TokenUnknown {
-			return Token{}, fmt.Errorf("unknown token encountered: %s\n%v", this.data[this.state.start:], t)
+			return fmt.Errorf("unknown token encountered: %s\n%v", this.data[this.state.start:], t)
 		}
 
 		// remove any trailing spaces
@@ -217,26 +217,32 @@ func (this *message) scan() (Token, error) {
 			s++
 		}
 
-		v := this.data[this.state.start : this.state.start+l]
-		this.state.start += l + s
-
-		token := Token{Type: t, Value: v, Field: FieldUnknown}
-
 		// For the special case of
 		// "9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] "GET http://WSsamples HTTP/1.1" 301 315"
 		// where we want to parse the stuff inside the quotes
-		if v == "\"" && this.state.inquote == true && len(this.tokens) == 6 && this.state.prevToken.Value == "]" {
+		if l == 1 && this.state.inquote == true && len(this.tokens) == 6 && this.state.prevToken.Value == "]" && this.data[this.state.start:this.state.start+l] == "\"" {
 			this.state.inquote = false
 			this.state.nxquote = false
 		}
 
-		this.tokens = append(this.tokens, token)
-		this.state.prevToken = token
+		if len(this.tokens) >= cap(this.tokens) {
+			this.tokens = append(this.tokens, Token{Field: FieldUnknown, Type: t, Value: this.data[this.state.start : this.state.start+l]})
+		} else {
+			i := len(this.tokens)
+			this.tokens = this.tokens[:i+1]
+			this.tokens[i].Field = FieldUnknown
+			this.tokens[i].Type = t
+			this.tokens[i].Value = this.data[this.state.start : this.state.start+l]
+			this.tokens[i].isKey, this.tokens[i].isValue = false, false
+		}
 
-		return token, nil
+		this.state.prevToken = this.tokens[len(this.tokens)-1]
+		this.state.start += l + s
+
+		return nil
 	}
 
-	return Token{}, io.EOF
+	return io.EOF
 }
 
 func (this *message) skipSpace(data string) int {

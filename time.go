@@ -54,18 +54,16 @@ var TimeFormats []string = []string{
 	"02Jan2006 03:04:05",
 }
 
-type timeNodeType int
-
 type timeNode struct {
-	ntype    timeNodeType
-	value    byte
+	ntype    int
+	value    rune
 	final    TokenType
 	subtype  int
 	children []*timeNode
 }
 
 const (
-	timeNodeRoot timeNodeType = iota
+	timeNodeRoot = iota
 	timeNodeLeaf
 	timeNodeDigit
 	timeNodeLetter
@@ -88,21 +86,21 @@ func buildTimeFSM() *timeNode {
 	root := &timeNode{ntype: timeNodeRoot}
 
 	for i, f := range TimeFormats {
-		buf := []byte(strings.ToLower(f))
-		if len(buf) < minTimeLength {
-			minTimeLength = len(buf)
+		f = strings.ToLower(f)
+		if len(f) < minTimeLength {
+			minTimeLength = len(f)
 		}
 
 		parent := root
 
-		for _, b := range buf {
-			t := tnType(rune(b))
+		for _, r := range f {
+			t := tnType(r)
 
 			hasChild := false
 			var child *timeNode
 
 			for _, child = range parent.children {
-				if (child.ntype == t && (t != timeNodeLiteral || (t == timeNodeLiteral && child.value == b))) ||
+				if (child.ntype == t && (t != timeNodeLiteral || (t == timeNodeLiteral && child.value == r))) ||
 					(child.ntype == timeNodeDigitOrSpace && (t == timeNodeDigit || t == timeNodeSpace)) {
 					hasChild = true
 					break
@@ -113,8 +111,8 @@ func buildTimeFSM() *timeNode {
 				}
 			}
 
-			if hasChild == false {
-				child = &timeNode{ntype: t, value: b}
+			if !hasChild {
+				child = &timeNode{ntype: t, value: r}
 				parent.children = append(parent.children, child)
 			}
 
@@ -128,11 +126,11 @@ func buildTimeFSM() *timeNode {
 	return root
 }
 
-func tnType(r rune) timeNodeType {
+func tnType(r rune) int {
 	switch {
 	case r >= '0' && r <= '9':
 		return timeNodeDigit
-	case r >= 'a' && r <= 'z':
+	case r >= 'a' && r <= 'y':
 		return timeNodeLetter
 	case r == ' ':
 		return timeNodeSpace
@@ -140,8 +138,10 @@ func tnType(r rune) timeNodeType {
 		return timeNodeDigitOrSpace
 	case r == '+' || r == '-':
 		return timeNodePlusOrMinus
-	case r >= 'A' && r <= 'Z':
+	case r >= 'A' && r <= 'Y':
 		return timeNodeLetter
+	case r == 'z' || r == 'Z':
+		return timeNodePlusOrMinus
 	}
 
 	return timeNodeLiteral
@@ -152,7 +152,7 @@ func timeStep(r rune, cur *timeNode) *timeNode {
 
 	for _, n := range cur.children {
 		if (n.ntype == timeNodeDigitOrSpace && (t == timeNodeDigit || t == timeNodeSpace)) ||
-			(n.ntype == t && (t != timeNodeLiteral || (t == timeNodeLiteral && rune(n.value) == r))) {
+			(n.ntype == t && (t != timeNodeLiteral || (t == timeNodeLiteral && n.value == r))) {
 
 			return n
 		}

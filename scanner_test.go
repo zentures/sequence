@@ -779,12 +779,16 @@ func TestGeneralScannerTokenize(t *testing.T) {
 	for _, tc := range seqtests {
 		seq, err := DefaultScanner.Tokenize(tc.data)
 		require.NoError(t, err)
+		for i, tok := range seq {
+			require.Equal(t, tc.seq[i], tok)
+		}
 		require.Equal(t, tc.seq, seq, tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
 func BenchmarkGeneralScannerOne(b *testing.B) {
+	data := sigtests[0].data
 	for i := 0; i < b.N; i++ {
-		DefaultScanner.Tokenize(sigtests[0].data)
+		DefaultScanner.Tokenize(data)
 	}
 }
