@@ -94,16 +94,19 @@ var (
 
 func TestParserMatchPatterns(t *testing.T) {
 	parser := NewParser()
+	seq := make(Sequence, 0, 20)
 
 	for _, tc := range parsetests {
-		seq, err := DefaultScanner.Tokenize(tc.rule)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.rule, seq)
 		require.NoError(t, err)
 		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		seq, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)
@@ -113,16 +116,19 @@ func TestParserMatchPatterns(t *testing.T) {
 
 func TestParserParseMessages(t *testing.T) {
 	parser := NewParser()
+	seq := make(Sequence, 0, 20)
 
 	for _, tc := range parsetests2 {
-		seq, err := DefaultScanner.Tokenize(tc.rule)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.rule, seq)
 		require.NoError(t, err)
 		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests2 {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		_, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)

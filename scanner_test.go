@@ -731,6 +731,7 @@ var (
 		{"::2:3:4", true},
 		{"0:0:0:0:0:0:0:5", true},
 		{"::5", true},
+		{"::", true},
 		{"ABC:567:0:0:8888:9999:1111:0", true},
 		{"ABC:567::8888:9999:1111:0", true},
 		{"ABC:567::8888:9999:1111:0 ", true}, // space at the end
@@ -768,27 +769,33 @@ func TestMessageScanHexString(t *testing.T) {
 }
 
 func TestGeneralScannerSignature(t *testing.T) {
+	seq := make(Sequence, 0, 20)
 	for _, tc := range sigtests {
-		seq, err := DefaultScanner.Tokenize(tc.data)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.data, seq)
 		require.NoError(t, err)
 		require.Equal(t, tc.sig, seq.Signature(), tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
 func TestGeneralScannerTokenize(t *testing.T) {
+	seq := make(Sequence, 0, 20)
 	for _, tc := range seqtests {
-		seq, err := DefaultScanner.Tokenize(tc.data)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.data, seq)
 		require.NoError(t, err)
-		for i, tok := range seq {
-			require.Equal(t, tc.seq[i], tok)
-		}
+		// for i, tok := range seq {
+		// 	require.Equal(t, tc.seq[i], tok)
+		// }
 		require.Equal(t, tc.seq, seq, tc.data+"\n"+seq.PrintTokens())
 	}
 }
 
 func BenchmarkGeneralScannerOne(b *testing.B) {
+	seq := make(Sequence, 0, 20)
 	data := sigtests[0].data
 	for i := 0; i < b.N; i++ {
-		DefaultScanner.Tokenize(data)
+		seq = seq[:0]
+		DefaultScanner.Tokenize(data, seq)
 	}
 }

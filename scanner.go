@@ -17,12 +17,11 @@ package sequence
 import (
 	"fmt"
 	"io"
-	"sync"
 	"unicode"
 )
 
 type Scanner interface {
-	Tokenize(s string) (Sequence, error)
+	Tokenize(s string, seq Sequence) (Sequence, error)
 }
 
 // GeneralScanner is a sequential lexical analyzer that breaks a log message into a
@@ -31,8 +30,6 @@ type Scanner interface {
 // expressions. The scanner currently recognizes time stamps, IPv4 addresses, URLs,
 // MAC addresses, integers and floating point numbers.
 type GeneralScanner struct {
-	initOnce sync.Once
-	tokens   Sequence
 }
 
 var (
@@ -122,37 +119,41 @@ var (
 // 		Token{TokenLiteral, FieldUnknown, "="},
 // 		Token{TokenMac, FieldUnknown, "00:04:c1:8b:d8:82"},
 // 	}
-func (this *GeneralScanner) Tokenize(s string) (Sequence, error) {
-	this.initOnce.Do(func() {
-		this.tokens = make(Sequence, 0, 20)
-	})
-
+func (this *GeneralScanner) Tokenize(s string, seq Sequence) (Sequence, error) {
 	msg := &message{
-		data:   s,
-		tokens: this.tokens[:0],
+		data: s,
 	}
 
 	msg.reset()
 
-	var err error
+	var (
+		err error
+		tok Token
+	)
 
-	for err = msg.scan(); err == nil; err = msg.scan() {
+	for tok, err = msg.scan(); err == nil; tok, err = msg.scan() {
+		// For some reason this is consistently slightly faster than just append
+		if len(seq) >= cap(seq) {
+			seq = append(seq, tok)
+		} else {
+			i := len(seq)
+			seq = seq[:i+1]
+			seq[i].Field = tok.Field
+			seq[i].Type = tok.Type
+			seq[i].Value = tok.Value
+			seq[i].isKey, seq[i].isValue = false, false
+		}
 	}
 
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
-	this.tokens = msg.tokens
-	msg.data = ""
-	msg.tokens = nil
-
-	return this.tokens, nil
+	return seq, nil
 }
 
 type message struct {
-	data   string
-	tokens Sequence
+	data string
 
 	state struct {
 		// these are per token states
@@ -162,6 +163,7 @@ type message struct {
 
 		// these are per message states
 		prevToken Token
+		tokCount  int
 
 		// Are we inside a quote such as ", ', <, [
 		inquote bool
@@ -195,7 +197,7 @@ const (
 )
 
 // Scan is similar to Tokenize except it returns one token at a time
-func (this *message) scan() error {
+func (this *message) scan() (Token, error) {
 	if this.state.start < this.state.end {
 		// Number of spaces skipped
 		nss := this.skipSpace(this.data[this.state.start:])
@@ -203,11 +205,11 @@ func (this *message) scan() error {
 
 		l, t, err := this.scanToken(this.data[this.state.start:])
 		if err != nil {
-			return err
+			return Token{}, err
 		} else if l == 0 {
-			return io.EOF
+			return Token{}, io.EOF
 		} else if t == TokenUnknown {
-			return fmt.Errorf("unknown token encountered: %s\n%v", this.data[this.state.start:], t)
+			return Token{}, fmt.Errorf("unknown token encountered: %s\n%v", this.data[this.state.start:], t)
 		}
 
 		// remove any trailing spaces
@@ -220,29 +222,20 @@ func (this *message) scan() error {
 		// For the special case of
 		// "9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] "GET http://WSsamples HTTP/1.1" 301 315"
 		// where we want to parse the stuff inside the quotes
-		if l == 1 && this.state.inquote == true && len(this.tokens) == 6 && this.state.prevToken.Value == "]" && this.data[this.state.start:this.state.start+l] == "\"" {
+		if l == 1 && this.state.inquote == true && this.state.tokCount == 6 && this.state.prevToken.Value == "]" && this.data[this.state.start:this.state.start+l] == "\"" {
 			this.state.inquote = false
 			this.state.nxquote = false
 		}
 
-		if len(this.tokens) >= cap(this.tokens) {
-			this.tokens = append(this.tokens, Token{Field: FieldUnknown, Type: t, Value: this.data[this.state.start : this.state.start+l]})
-		} else {
-			i := len(this.tokens)
-			this.tokens = this.tokens[:i+1]
-			this.tokens[i].Field = FieldUnknown
-			this.tokens[i].Type = t
-			this.tokens[i].Value = this.data[this.state.start : this.state.start+l]
-			this.tokens[i].isKey, this.tokens[i].isValue = false, false
-		}
-
-		this.state.prevToken = this.tokens[len(this.tokens)-1]
+		tok := Token{Field: FieldUnknown, Type: t, Value: this.data[this.state.start : this.state.start+l]}
+		this.state.tokCount++
+		this.state.prevToken = tok
 		this.state.start += l + s
 
-		return nil
+		return tok, nil
 	}
 
-	return io.EOF
+	return Token{}, io.EOF
 }
 
 func (this *message) skipSpace(data string) int {

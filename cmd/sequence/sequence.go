@@ -282,6 +282,8 @@ var (
 
 	quit chan struct{}
 	done chan struct{}
+
+	mbyte = 1024 * 1024
 )
 
 func init() {
@@ -361,7 +363,8 @@ func profile() {
 }
 
 func scan(cmd *cobra.Command, args []string) {
-	seq, err := sequence.DefaultScanner.Tokenize(inmsg)
+	seq := make(sequence.Sequence, 0, 20)
+	seq, err := sequence.DefaultScanner.Tokenize(inmsg, seq)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -383,6 +386,8 @@ func analyze(cmd *cobra.Command, args []string) {
 	iscan, ifile := openFile(infile)
 	defer ifile.Close()
 
+	seq := make(sequence.Sequence, 0, 20)
+
 	// For all the log messages, if we can't parse it, then let's add it to the
 	// analyzer for pattern analysis
 	for iscan.Scan() {
@@ -391,7 +396,8 @@ func analyze(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		seq, err := sequence.DefaultScanner.Tokenize(line)
+		seq = seq[:0]
+		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -420,7 +426,8 @@ func analyze(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		seq, err := sequence.DefaultScanner.Tokenize(line)
+		seq = seq[:0]
+		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -478,6 +485,7 @@ func parse(cmd *cobra.Command, args []string) {
 	profile()
 
 	parser := buildParser()
+	seq := make(sequence.Sequence, 0, 20)
 
 	iscan, ifile := openFile(infile)
 	defer ifile.Close()
@@ -495,7 +503,8 @@ func parse(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		seq, err := sequence.DefaultScanner.Tokenize(line)
+		seq = seq[:0]
+		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -524,6 +533,7 @@ func benchScan(cmd *cobra.Command, args []string) {
 
 	var lines []string
 	n := 0
+	seq := make(sequence.Sequence, 0, 20)
 
 	for iscan.Scan() {
 		line := iscan.Text()
@@ -541,7 +551,8 @@ func benchScan(cmd *cobra.Command, args []string) {
 
 	if workers == 1 {
 		for _, line := range lines {
-			sequence.DefaultScanner.Tokenize(line)
+			seq = seq[:0]
+			sequence.DefaultScanner.Tokenize(line, seq)
 		}
 	} else {
 		var wg sync.WaitGroup
@@ -552,7 +563,8 @@ func benchScan(cmd *cobra.Command, args []string) {
 			go func() {
 				defer wg.Done()
 				for line := range msgpipe {
-					sequence.DefaultScanner.Tokenize(line)
+					seq = seq[:0]
+					sequence.DefaultScanner.Tokenize(line, seq)
 				}
 			}()
 		}
@@ -582,6 +594,7 @@ func benchParse(cmd *cobra.Command, args []string) {
 	defer ifile.Close()
 
 	var lines []string
+	var totalSize int
 	n := 0
 
 	for iscan.Scan() {
@@ -592,6 +605,7 @@ func benchParse(cmd *cobra.Command, args []string) {
 
 		n++
 		lines = append(lines, line)
+		totalSize += len(line)
 	}
 
 	profile()
@@ -599,8 +613,10 @@ func benchParse(cmd *cobra.Command, args []string) {
 	now := time.Now()
 
 	if workers == 1 {
+		seq := make(sequence.Sequence, 0, 20)
 		for _, line := range lines {
-			seq, err := sequence.DefaultScanner.Tokenize(line)
+			seq = seq[:0]
+			seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -614,8 +630,10 @@ func benchParse(cmd *cobra.Command, args []string) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				seq := make(sequence.Sequence, 0, 20)
 				for line := range msgpipe {
-					seq, err := sequence.DefaultScanner.Tokenize(line)
+					seq = seq[:0]
+					seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 					if err != nil {
 						log.Fatal(err)
 					}
@@ -633,7 +651,7 @@ func benchParse(cmd *cobra.Command, args []string) {
 	}
 
 	since := time.Since(now)
-	log.Printf("Parsed %d messages in %.2f secs, ~ %.2f msgs/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)))
+	log.Printf("Parsed %d messages in %.2f secs, ~ %.2f msgs/sec, ~ %.2f MB/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)), float64(totalSize)/float64(mbyte)/(float64(since)/float64(time.Second)))
 	close(quit)
 	<-done
 }
@@ -642,6 +660,7 @@ func buildParser() *sequence.Parser {
 	parser := sequence.NewParser()
 
 	var files []string
+	seq := make(sequence.Sequence, 0, 20)
 
 	if patdir != "" {
 		files = getDirOfFiles(patdir)
@@ -661,7 +680,8 @@ func buildParser() *sequence.Parser {
 				continue
 			}
 
-			seq, err := sequence.DefaultScanner.Tokenize(line)
+			seq = seq[:0]
+			seq, err := sequence.DefaultScanner.Tokenize(line, seq)
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -80,9 +80,11 @@ var (
 
 func TestAnalyzerMergeNodes(t *testing.T) {
 	atree := NewAnalyzer()
+	seq := make(Sequence, 0, 20)
 
 	for _, data := range analyzerSshdSamples {
-		seq, err := DefaultScanner.Tokenize(data)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(data, seq)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err)
@@ -203,9 +205,11 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 
 func TestAnalyzerKeyValuePairs(t *testing.T) {
 	atree := NewAnalyzer()
+	seq := make(Sequence, 0, 20)
 
 	for _, tc := range analyzerKVTests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
@@ -243,16 +247,19 @@ func TestAnalyzerKeyValuePairs(t *testing.T) {
 
 func TestAnalyzerMatchPatterns(t *testing.T) {
 	atree := NewAnalyzer()
+	seq := make(Sequence, 0, 20)
 
 	for _, tc := range analyzerSshTests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
 	}
 
 	for _, tc := range analyzerKVTests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
@@ -261,18 +268,20 @@ func TestAnalyzerMatchPatterns(t *testing.T) {
 	atree.Finalize()
 
 	for _, tc := range analyzerSshTests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
-		require.Equal(t, tc.pat, seq.String(), tc.msg)
+		require.Equal(t, tc.pat, seq.String(), tc.msg, seq)
 	}
 
 	for _, tc := range analyzerKVTests {
-		seq, err := DefaultScanner.Tokenize(tc.msg)
+		seq = seq[:0]
+		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
 		require.NoError(t, err)
 		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
-		require.Equal(t, tc.pat, seq.String(), tc.msg)
+		require.Equal(t, tc.pat, seq.String(), tc.msg, seq)
 	}
 }
