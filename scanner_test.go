@@ -665,6 +665,7 @@ var (
 			},
 		},
 
+		// relates to #2
 		{
 			"Feb 06 13:37:00 box sshd[4388]: Accepted publickey for cryptix from dead:beef:1234:5678:223:32ff:feb1:2e50 port 58251 ssh2: RSA de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "Feb 06 13:37:00", isKey: false, isValue: false},
@@ -686,6 +687,48 @@ var (
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "RSA", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", isKey: false, isValue: false},
+			},
+		},
+
+		// relates to #6
+		{
+			"2015-01-21 21:41:27 4515 [Note] - '::' resolves to '::';", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-01-21 21:41:27", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "4515", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Note", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv6, Value: "::", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "resolves", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "to", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv6, Value: "::", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ";", isKey: false, isValue: false},
+			},
+		},
+
+		// relates to #6,
+		{
+			"2015-01-21 21:41:27 4515 [Note] Server socket created on IP: '::'.", Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-01-21 21:41:27", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "4515", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Note", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Server", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "socket", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "created", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "on", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "IP", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv6, Value: "::", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "'", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ".", isKey: false, isValue: false},
 			},
 		},
 

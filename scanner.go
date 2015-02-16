@@ -312,7 +312,7 @@ func (this *message) scanToken(data string) (int, TokenType, error) {
 		if (this.state.tokenStop && timeStop && hexStop) || i == l-1 {
 			if timeLen > 0 {
 				return timeLen, TokenTime, nil
-			} else if hexValid && this.state.hexColons > 1 {
+			} else if hexLen > 0 && this.state.hexColons > 1 {
 				if this.state.hexColons == 5 && this.state.hexMaxSuccColons == 1 {
 					return hexLen, TokenMac, nil
 				} else if this.state.hexSuccColonsSeries == 1 ||
@@ -605,6 +605,12 @@ func (this *message) hexStep(i int, r rune) (bool, bool) {
 			}
 
 			this.state.hexState = hexColon
+
+			// for the special case of "::" which is valid and represents an
+			// unspecified ip
+			if i == 1 {
+				return true, false
+			}
 
 		default:
 			if this.state.hexColons > 0 && unicode.IsSpace(r) {
