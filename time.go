@@ -52,6 +52,7 @@ var TimeFormats []string = []string{
 	"1/2/06 3:04:05.000 PM",
 	"1/2/2006 15:04",
 	"02Jan2006 03:04:05",
+	"Jan _2, 2006 3:04:05 PM",
 }
 
 type timeNode struct {
@@ -130,17 +131,13 @@ func tnType(r rune) int {
 	switch {
 	case r >= '0' && r <= '9':
 		return timeNodeDigit
-	case r >= 'a' && r <= 'y':
+	case r >= 'a' && r <= 'y' || r >= 'A' && r <= 'Y':
 		return timeNodeLetter
 	case r == ' ':
 		return timeNodeSpace
 	case r == '_':
 		return timeNodeDigitOrSpace
-	case r == '+' || r == '-':
-		return timeNodePlusOrMinus
-	case r >= 'A' && r <= 'Y':
-		return timeNodeLetter
-	case r == 'z' || r == 'Z':
+	case r == '+' || r == '-' || r == 'z' || r == 'Z':
 		return timeNodePlusOrMinus
 	}
 

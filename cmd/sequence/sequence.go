@@ -532,6 +532,7 @@ func benchScan(cmd *cobra.Command, args []string) {
 	defer ifile.Close()
 
 	var lines []string
+	var totalSize int
 	n := 0
 	seq := make(sequence.Sequence, 0, 20)
 
@@ -543,6 +544,7 @@ func benchScan(cmd *cobra.Command, args []string) {
 
 		n++
 		lines = append(lines, line)
+		totalSize += len(line)
 	}
 
 	profile()
@@ -578,7 +580,7 @@ func benchScan(cmd *cobra.Command, args []string) {
 	}
 
 	since := time.Since(now)
-	log.Printf("Scanned %d messages in %.2f secs, ~ %.2f msgs/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)))
+	log.Printf("Scanned %d messages in %.2f secs, ~ %.2f msgs/sec, ~ %.2f MB/sec", n, float64(since)/float64(time.Second), float64(n)/(float64(since)/float64(time.Second)), float64(totalSize)/float64(mbyte)/(float64(since)/float64(time.Second)))
 	close(quit)
 	<-done
 }

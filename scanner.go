@@ -160,23 +160,19 @@ type message struct {
 		tokenType TokenType
 		tokenStop bool
 		dots      int
+		initDot   bool // Did the token start w/ a dot?
+		octets    int  // number of octets found for ipv4
 
 		// these are per message states
-		prevToken Token
-		tokCount  int
+		prevToken       Token
+		tokCount        int
+		cur, start, end int // cursor positions
 
-		// Are we inside a quote such as ", ', <, [
-		inquote bool
+		backslash bool // Should the next quote be escaped?
 
-		// Which quote character is it?
-		chquote rune
-
-		// Should the next quote be an open quote?
-		// See special case in scan()
-		nxquote bool
-
-		// cursor positions
-		cur, start, end int
+		inquote bool // Are we inside a quote such as ", ', <, [
+		chquote rune // Which quote character is it?
+		nxquote bool // Should the next quote be an open quote? See special case in scan()
 
 		hexState            int  // Current hex string state
 		hexStart            bool // Is the first char a :?
@@ -255,16 +251,13 @@ func (this *message) skipSpace(data string) int {
 
 func (this *message) scanToken(data string) (int, TokenType, error) {
 	var (
-		tnode                       *timeNode = timeFsmRoot
-		timeStop, hexStop, hexValid bool
-		timeLen, hexLen, tokenLen   int
-		l                           = len(data)
+		tnode                                  = timeFsmRoot
+		tokenStop, timeStop, hexStop, hexValid bool
+		timeLen, hexLen, tokenLen              int
+		l                                      = len(data)
 	)
 
-	this.state.dots = 0
-	this.state.tokenType = TokenUnknown
-	this.state.tokenStop = false
-	this.resetHexStates()
+	this.resetTokenStates()
 
 	// short circuit the time check
 	if l < 3 {
@@ -277,10 +270,10 @@ func (this *message) scanToken(data string) (int, TokenType, error) {
 	}
 
 	for i, r := range data {
-		if !this.state.tokenStop {
-			this.tokenStep(i, r)
+		if !tokenStop {
+			tokenStop = this.tokenStep(i, r)
 
-			if !this.state.tokenStop {
+			if !tokenStop {
 				tokenLen++
 			}
 		}
@@ -307,9 +300,9 @@ func (this *message) scanToken(data string) (int, TokenType, error) {
 			}
 		}
 
-		//glog.Debugf("i=%d, r=%c, tokenStop=%t, timeStop=%t, hexStop=%t", i, r, this.state.tokenStop, timeStop, hexStop)
+		//log.Printf("i=%d, r=%c, tokenStop=%t, timeStop=%t, hexStop=%t", i, r, this.state.tokenStop, timeStop, hexStop)
 		// This means either we found something, or we have exhausted the string
-		if (this.state.tokenStop && timeStop && hexStop) || i == l-1 {
+		if (tokenStop && timeStop && hexStop) || i == l-1 {
 			if timeLen > 0 {
 				return timeLen, TokenTime, nil
 			} else if hexLen > 0 && this.state.hexColons > 1 {
@@ -324,6 +317,7 @@ func (this *message) scanToken(data string) (int, TokenType, error) {
 				}
 			}
 
+			// glog.Debugf("i=%d, r=%c, tokenLen=%d, value=%q", i, r, tokenLen, data[:tokenLen])
 			// If token length is 0, it means we didn't find time, nor did we find
 			// a word, it cannot be space since we skipped all space. This means it
 			// is a single character literal, so return that.
@@ -338,195 +332,202 @@ func (this *message) scanToken(data string) (int, TokenType, error) {
 	return len(data), this.state.tokenType, nil
 }
 
-func (this *message) tokenStep(index int, r rune) {
-	switch {
-	case this.state.tokenType == TokenURL:
-		if (index == 1 && (r == 't' || r == 'T')) ||
-			(index == 2 && (r == 't' || r == 'T')) ||
-			(index == 3 && (r == 'p' || r == 'P')) ||
-			(index == 4 && (r == 's' || r == 'S')) ||
-			((index == 4 || index == 5) && r == ':') ||
-			((index == 5 || index == 6) && r == '/') ||
-			((index == 6 || index == 7) && r == '/') ||
-			(index >= 6 && !unicode.IsSpace(r)) {
-
+func (this *message) tokenStep(i int, r rune) bool {
+	// glog.Debugf("1. i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
+	switch this.state.tokenType {
+	case TokenUnknown:
+		switch r {
+		case 'h', 'H':
 			this.state.tokenType = TokenURL
-		} else if isLiteral(r) {
-			this.state.tokenType = TokenLiteral
-		} else {
-			// if there are 6 or less chars, then it can't be an URL, must be literal
-			if index < 6 {
-				this.state.tokenType = TokenLiteral
-			}
 
-			// if it's /, then it's probably something like http/1.0 or http/1.1,
-			// let's keep it going
-			if r != '/' {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			this.state.tokenType = TokenInteger
+
+		// case '.':
+		// 	this.state.tokenType = TokenFloat
+		// 	this.state.initDot = true
+
+		case '/':
+			if this.state.prevToken.Type == TokenIPv4 {
+				this.state.tokenType = TokenLiteral
 				this.state.tokenStop = true
 			}
-		}
 
-	case index == 0 && (r == 'h' || r == 'H'):
-		this.state.tokenType = TokenURL
-
-	case isLiteral(r):
-		this.state.tokenType = TokenLiteral
-
-	case r == '/':
-		if this.state.tokenType == TokenIPv4 {
+		case '"', '\'':
 			this.state.tokenStop = true
-		} else if this.state.prevToken.Type == TokenIPv4 {
 			this.state.tokenType = TokenLiteral
-			this.state.tokenStop = true
-		} else {
-			this.state.tokenType = TokenLiteral
-		}
 
-	case r >= '0' && r <= '9':
-		if this.state.tokenType == TokenInteger || index == 0 {
-			this.state.tokenType = TokenInteger
-		} else if this.state.tokenType == TokenIPv4 && this.state.dots < 4 {
-			this.state.tokenType = TokenIPv4
-		} else if this.state.tokenType == TokenFloat && this.state.dots == 1 {
-			this.state.tokenType = TokenFloat
-		} else {
-			this.state.tokenType = TokenLiteral
-		}
+			//glog.Debugf("i=%d, r=%c, inquote=%t, nxquote=%t, chquote=%c", i, r, this.state.inquote, this.state.nxquote, this.state.chquote)
 
-	case r == '.':
-		this.state.dots++
-
-		if this.state.tokenType == TokenInteger && this.state.dots == 1 {
-			this.state.tokenType = TokenFloat
-		} else if (this.state.dots > 1 && this.state.tokenType == TokenFloat) ||
-			(this.state.dots < 4 && this.state.tokenType == TokenIPv4) {
-
-			this.state.tokenType = TokenIPv4
-		} else {
-			this.state.tokenType = TokenLiteral
-		}
-
-	case r == '"':
-		this.state.tokenStop = true
-
-		if index == 0 {
-			if this.state.inquote == false && this.state.nxquote {
+			if !this.state.inquote && this.state.nxquote {
 				// If we are not inside a quote now and we are at the beginning,
 				// then let's be inside the quote now. This is basically the
 				// beginning quotation mark.
 				this.state.inquote = true
 				this.state.chquote = r
-			} else if this.state.inquote == true && this.state.chquote == '"' {
-				// If we are at the beginning of the data and we are inside q quote,
+				this.state.nxquote = true
+			} else if this.state.inquote && this.state.chquote == r {
+				// If we are at the beginning of the data and we are inside a quote,
 				// then this is the ending quotation mark.
 				this.state.inquote = false
 			}
-		}
 
-	case r == '\'':
-		if index == 0 && this.state.inquote == false {
-			// If we are not inside a quote now and we are at the beginning,
-			// then let's be inside the quote now. This is basically the
-			// beginning quotation mark.
-			this.state.inquote = true
-			this.state.chquote = r
+			//glog.Debugf("i=%d, r=%c, inquote=%t, nxquote=%t, chquote=%c", i, r, this.state.inquote, this.state.nxquote, this.state.chquote)
+
+		case '<':
 			this.state.tokenStop = true
-		} else if index != 0 && this.state.inquote == true && this.state.chquote == '\'' {
-			// If we are not at the beginning of the data and we are inside a quote,
-			// then this is probably the end of the quote, so let's stop here.
-			// What we capture is what's in between quotation marks.
-			this.state.tokenStop = true
-		} else if index == 0 && this.state.inquote == true && this.state.chquote == '\'' {
-			// If we are at the beginning of the data and we are inside q quote,
-			// then this is the ending quotation mark.
-			this.state.inquote = false
-			this.state.tokenStop = true
-		} else {
-			// Otherwise this is just part of the string literal
 			this.state.tokenType = TokenLiteral
-		}
 
-	case r == '<':
-		if this.state.inquote == false {
-			if index == 0 {
-				// If we are not inside a quote now then let's be inside the quote now.
-				// This is basically the beginning quotation mark.
+			if !this.state.inquote {
+				// If we are not inside a quote now and we are at the beginning,
+				// then let's be inside the quote now. This is basically the
+				// beginning quotation mark.
 				this.state.inquote = true
 				this.state.chquote = r
-				this.state.tokenStop = true
-			} else {
-				this.state.tokenStop = true
 			}
-		} else {
-			// Otherwise this is just part of the string literal
-			this.state.tokenType = TokenLiteral
-		}
 
-	case r == '>':
-		if this.state.inquote == true && this.state.chquote == '<' {
-			if index == 0 {
-				// If we are at the beginning of the data and we are inside q quote,
+		case '>':
+			this.state.tokenStop = true
+			this.state.tokenType = TokenLiteral
+
+			if this.state.inquote && this.state.chquote == '<' {
+				// If we are at the beginning of the data and we are inside a quote,
 				// then this is the ending quotation mark.
 				this.state.inquote = false
-				this.state.tokenStop = true
-			} else {
-				// If we are not at the beginning of the data and we are inside a quote,
-				// then this is probably the end of the quote, so let's stop here.
-				// What we capture is what's in between quotation marks.
+			}
+
+		case '\\':
+			this.state.tokenType = TokenLiteral
+
+		default:
+			this.state.tokenType = TokenLiteral
+			if !isLiteral(r) {
 				this.state.tokenStop = true
 			}
-		} else {
-			// Otherwise this is just part of the string literal
-			this.state.tokenType = TokenLiteral
 		}
 
-	// case r == '[':
-	// 	if this.state.inquote == false {
-	// 		if index == 0 {
-	// 			// If we are not inside a quote now then let's be inside the quote now.
-	// 			// This is basically the beginning quotation mark.
-	// 			this.state.inquote = true
-	// 			this.state.chquote = r
-	// 			this.state.tokenStop = true
-	// 		} else {
-	// 			this.state.tokenStop = true
-	// 		}
-	// 	} else {
-	// 		// Otherwise this is just part of the string literal
-	// 		this.state.tokenType = TokenLiteral
-	// 	}
+	case TokenURL:
+		//glog.Debugf("i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
+		switch {
+		case (i == 1 && (r == 't' || r == 'T')) ||
+			(i == 2 && (r == 't' || r == 'T')) ||
+			(i == 3 && (r == 'p' || r == 'P')) ||
+			(i == 4 && (r == 's' || r == 'S')) ||
+			((i == 4 || i == 5) && r == ':') ||
+			((i == 5 || i == 6) && r == '/') ||
+			((i == 6 || i == 7) && r == '/'):
 
-	// case r == ']':
-	// 	if this.state.inquote == true && this.state.chquote == '[' {
-	// 		if index == 0 {
-	// 			// If we are at the beginning of the data and we are inside q quote,
-	// 			// then this is the ending quotation mark.
-	// 			this.state.inquote = false
-	// 			this.state.tokenStop = true
-	// 		} else {
-	// 			// If we are not at the beginning of the data and we are inside a quote,
-	// 			// then this is probably the end of the quote, so let's stop here.
-	// 			// What we capture is what's in between quotation marks.
-	// 			this.state.tokenStop = true
-	// 		}
-	// 	} else {
-	// 		// Otherwise this is just part of the string literal
-	// 		this.state.tokenType = TokenLiteral
-	// 	}
+			this.state.tokenType = TokenURL
 
-	default:
-		if !this.state.inquote {
+		default:
+			if i >= 6 && (!unicode.IsSpace(r) || (this.state.inquote && matchQuote(this.state.chquote, r))) {
+				// part of URL, keep going
+				//this.state.tokenType = TokenURL
+			} else if i == 4 && r == '/' {
+				// if it's /, then it's probably something like http/1.0 or http/1.1,
+				// let's keep it going
+				this.state.tokenType = TokenLiteral
+			} else if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
+				// no longer URL, turn into literal
+				this.state.tokenType = TokenLiteral
+			} else {
+				this.state.tokenStop = true
+
+				// if there are 6 or less chars, then it can't be an URL, must be literal
+				if i < 6 {
+					this.state.tokenType = TokenLiteral
+				}
+			}
+		}
+
+	case TokenInteger:
+		switch r {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			//this.state.tokenType = TokenInteger
+
+		case '.':
+			// this should be the ONLY dot this switch case should see
+			this.state.dots++
+			this.state.tokenType = TokenFloat
+
+		default:
+			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
+				// no longer URL, turn into literal
+				this.state.tokenType = TokenLiteral
+			} else {
+				this.state.tokenStop = true
+			}
+		}
+
+	case TokenFloat:
+		switch r {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			//this.state.tokenType = TokenFloat
+
+		case '.':
+			this.state.dots++
+			// this SHOULD only be the second dot we encountered...
+
+			// If this token started with a dot, then it can't be ipv4,
+			// must be literal
+			if this.state.initDot {
+				this.state.tokenType = TokenLiteral
+			} else {
+				// otherwise assume it's ipv4
+				// FIXME: will consider something like "123.." as the beginning of IPv4
+				this.state.tokenType = TokenIPv4
+			}
+
+		default:
+			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
+				// no longer URL, turn into literal
+				this.state.tokenType = TokenLiteral
+			} else {
+				this.state.tokenStop = true
+			}
+		}
+
+	case TokenLiteral:
+		if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
+			//this.state.tokenType = TokenLiteral
+		} else {
 			this.state.tokenStop = true
 		}
-	}
 
-	if this.state.tokenStop {
-		if (this.state.tokenType == TokenIPv4 && this.state.dots != 3) ||
-			(this.state.tokenType == TokenFloat && this.state.dots != 1) {
+	case TokenIPv4:
+		switch r {
+		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
+			//this.state.tokenType = TokenFloat
 
-			this.state.tokenType = TokenLiteral
+		case '.':
+			this.state.dots++
+			// this SHOULD only be the second dot we encountered...
+
+			// If this token started with a dot, then it can't be ipv4,
+			// must be literal
+			if this.state.initDot {
+				this.state.tokenType = TokenLiteral
+			} else {
+				// otherwise assume it's ipv4
+				this.state.tokenType = TokenIPv4
+			}
+
+		case '/':
+			this.state.tokenStop = true
+
+		default:
+			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
+				// no longer URL, turn into literal
+				this.state.tokenType = TokenLiteral
+			} else {
+				this.state.tokenStop = true
+			}
 		}
 	}
+
+	// glog.Debugf("2. i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
+
+	return this.state.tokenStop
 }
 
 // hexStep steps through a string and try to match a hex string of the format
@@ -654,15 +655,22 @@ func (this *message) hexStep(i int, r rune) (bool, bool) {
 }
 
 func (this *message) reset() {
-	this.state.tokenType = TokenUnknown
-	this.state.tokenStop = false
-	this.state.dots = 0
 	this.state.prevToken = Token{}
 	this.state.inquote = false
 	this.state.nxquote = true
 	this.state.start = 0
 	this.state.end = len(this.data)
 	this.state.cur = 0
+	this.state.backslash = false
+
+	this.resetTokenStates()
+}
+
+func (this *message) resetTokenStates() {
+	this.state.dots = 0
+	this.state.tokenType = TokenUnknown
+	this.state.tokenStop = false
+	this.state.initDot = false
 
 	this.resetHexStates()
 }
@@ -681,9 +689,19 @@ func isLetter(r rune) bool {
 }
 
 func isLiteral(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?'
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?' || r == '.' || r == '&' || r == '/'
 }
 
 func isHex(r rune) bool {
-	return r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' || r >= '0' && r <= '9'
+	return isDigit(r) || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
+}
+
+func isDigit(r rune) bool {
+	return r >= '0' && r <= '9'
+}
+
+// q - quote char in state
+// r - current char
+func matchQuote(q, r rune) bool {
+	return (((r == '"' || r == '\'') && r == q) || (r == '>' && q == '<'))
 }

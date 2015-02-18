@@ -146,7 +146,7 @@ type Token struct {
 }
 
 func (this Token) String() string {
-	return fmt.Sprintf("{ Field=%%q, Type=%%q, Value=%%q, K=%%t, V=%%t }", this.Field, this.Type, this.Value, this.isKey, this.isValue)
+	return fmt.Sprintf("{ Field=%%q, Type=%%q, Value=%%q, isKey=%%t, isValue=%%t }", this.Field, this.Type, this.Value, this.isKey, this.isValue)
 }
 
 type (

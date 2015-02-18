@@ -790,7 +790,63 @@ var (
 		{"dead:beef:1234:5678:223:32ff:feb1:2e50", true},
 		{"12345:32432:3232", false},
 	}
+
+	tokentests = []struct {
+		data   string
+		result string
+		ttype  TokenType
+	}{
+		{"http://WSsamples", "http://WSsamples", TokenURL},
+		{"123.456.78.23", "123.456.78.23", TokenIPv4},
+		{"egreetings@vishwak.com", "egreetings@vishwak.com", TokenLiteral},
+		{"(smtp:5.5.5.5)", "(", TokenLiteral},
+		{"smtp:5.5.5.5)", "smtp", TokenLiteral},
+		{":5.5.5.5)", ":", TokenLiteral},
+		{"5.5.5.5)", "5.5.5.5", TokenIPv4},
+		{"\"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "\"", TokenLiteral},
+		{"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "aws-cli/1.3.2", TokenLiteral},
+		{"\"", "\"", TokenLiteral},
+		{"arn:aws:iam::123456789012:user/Alice", "arn", TokenLiteral},
+		{":aws:iam::123456789012:user/Alice", ":", TokenLiteral},
+		{"aws:iam::123456789012:user/Alice", "aws", TokenLiteral},
+		{":iam::123456789012:user/Alice", ":", TokenLiteral},
+		{"iam::123456789012:user/Alice", "iam", TokenLiteral},
+		{"::123456789012:user/Alice", ":", TokenLiteral},
+		{":123456789012:user/Alice", ":", TokenLiteral},
+		{"123456789012:user/Alice", "123456789012", TokenInteger},
+		{":user/Alice", ":", TokenLiteral},
+		{"user/Alice", "user/Alice", TokenLiteral},
+		{"192.168.20.20/33", "192.168.20.20", TokenIPv4},
+		{"192.168 3", "192.168", TokenFloat},
+	}
 )
+
+func TestMessageScanTokens(t *testing.T) {
+	msg := &message{}
+
+	for _, tc := range tokentests {
+		var (
+			stop bool
+			l    int
+		)
+
+		msg.resetTokenStates()
+
+		for i, r := range tc.data {
+			stop = msg.tokenStep(i, r)
+			if stop {
+				if l == 0 {
+					l = 1
+				}
+				break
+			}
+			l++
+		}
+
+		require.Equal(t, tc.result, tc.data[:l], tc.data)
+		require.Equal(t, tc.ttype, msg.state.tokenType, tc.data)
+	}
+}
 
 func TestMessageScanHexString(t *testing.T) {
 	msg := &message{}
@@ -827,10 +883,9 @@ func TestGeneralScannerTokenize(t *testing.T) {
 		seq = seq[:0]
 		seq, err := DefaultScanner.Tokenize(tc.data, seq)
 		require.NoError(t, err)
-		// for i, tok := range seq {
-		// 	require.Equal(t, tc.seq[i], tok)
-		// }
-		require.Equal(t, tc.seq, seq, tc.data+"\n"+seq.PrintTokens())
+		for i, tok := range seq {
+			require.Equal(t, tc.seq[i], tok, tc.data)
+		}
 	}
 }
 
@@ -842,3 +897,10 @@ func BenchmarkGeneralScannerOne(b *testing.B) {
 		DefaultScanner.Tokenize(data, seq)
 	}
 }
+
+// func TestGeneralScannerCloudTrail(t *testing.T) {
+// 	data := `{"Records": [{"eventVersion": "1.0", "userIdentity": {"type": "IAMUser", "principalId": "EX_PRINCIPAL_ID", "arn": "arn:aws:iam::123456789012:user/Alice", "accountId": "123456789012", "accessKeyId": "EXAMPLE_KEY_ID", "userName": "Alice"}, "eventTime": "2014-03-25T20:17:37Z", "eventSource": "iam.amazonaws.com", "eventName": "CreateRole", "awsRegion": "us-east-1", "sourceIPAddress": "127.0.0.1", "userAgent": "aws-cli/1.3.2 Python/2.7.5 Windows/7", "requestParameters": {"assumeRolePolicyDocument": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"\", \n\"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::210987654321:root\"\n      },\n      \"Action\": \"sts:AssumeRole\"\n    }\n  ]\n}", "roleName": "TestRole"}, "responseElements": {"role": {"assumeRolePolicyDocument": "%7B%0A%20%20%22Version%22%3A%20%222012-10-17%22%2C%0A%20%20%22Statement%22%3A%20%5B%0A%20%20%20%20%7B%0A%20%20%20%20%20%20%22Sid%22%3A%20%22%22%2C%0A%20%20%20%20%20%20%22Effect%22%3A%20%22Allow%22%2C%0A%20%20%20%20%20%20%22Principal%22%3A%20%7B%0A%20%20%20%20%20%20%20%20%22AWS%22%3A%20%22arn%3Aaws%3Aiam%3A%3A803981987763%3Aroot%22%0A%20%20%20%20%20%20%7D%2C%0A%20%20%20%20%20%20%22Action%22%3A%20%22sts%3AAssumeRole%22%0A%20%20%20%20%7D%0A%20%20%5D%0A%7D", "roleName": "TestRole", "roleId": "AROAIUU2EOWSWPGX2UJUO", "arn": "arn:aws:iam::123456789012:role/TestRole", "createDate": "Mar 25, 2014 8:17:37 PM", "path": "/"} } }] }`
+// 	seq := make(Sequence, 0, 20)
+// 	seq, _ = DefaultScanner.Tokenize(data, seq)
+// 	log.Println(seq.PrintTokens())
+// }
