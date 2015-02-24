@@ -17,28 +17,14 @@ package sequence
 import (
 	"fmt"
 	"io"
-	"unicode"
+	"strconv"
 )
 
-type Scanner interface {
-	Tokenize(s string, seq Sequence) (Sequence, error)
-}
-
-// GeneralScanner is a sequential lexical analyzer that breaks a log message into a
+// Scanner is a sequential lexical analyzer that breaks a log message into a
 // sequence of tokens. It is sequential because it goes through log message
 // sequentially tokentizing each part of the message, without the use of regular
 // expressions. The scanner currently recognizes time stamps, IPv4 addresses, URLs,
 // MAC addresses, integers and floating point numbers.
-type GeneralScanner struct {
-}
-
-var (
-	_              Scanner = (*GeneralScanner)(nil)
-	DefaultScanner         = &GeneralScanner{}
-)
-
-// Tokenize returns a Sequence, or a list of tokens, for the data string supplied.
-// The returned Sequence is only valid until the next time Tokenize() is called.
 //
 // For example, the following message
 //
@@ -119,29 +105,50 @@ var (
 // 		Token{TokenLiteral, FieldUnknown, "="},
 // 		Token{TokenMac, FieldUnknown, "00:04:c1:8b:d8:82"},
 // 	}
-func (this *GeneralScanner) Tokenize(s string, seq Sequence) (Sequence, error) {
-	msg := &message{
-		data: s,
-	}
+type Scanner struct {
+	seq Sequence
+	msg *Message
+}
 
-	msg.reset()
+func NewScanner() *Scanner {
+	return &Scanner{
+		seq: make(Sequence, 0, 20),
+		msg: &Message{},
+	}
+}
+
+// Scan returns a Sequence, or a list of tokens, for the data string supplied.
+// Scan is not concurrent-safe, and the returned Sequence is only valid until
+// the next time any Scan*() method is called. The best practice would be to
+// create one Scanner for each goroutine.
+func (this *Scanner) Scan(s string) (Sequence, error) {
+	this.msg.Data = s
+	this.msg.reset()
+	this.seq = this.seq[:0]
 
 	var (
 		err error
 		tok Token
 	)
 
-	for tok, err = msg.scan(); err == nil; tok, err = msg.scan() {
-		// For some reason this is consistently slightly faster than just append
-		if len(seq) >= cap(seq) {
-			seq = append(seq, tok)
-		} else {
-			i := len(seq)
-			seq = seq[:i+1]
-			seq[i].Field = tok.Field
-			seq[i].Type = tok.Type
-			seq[i].Value = tok.Value
-			seq[i].isKey, seq[i].isValue = false, false
+	for tok, err = this.msg.Tokenize(); err == nil; tok, err = this.msg.Tokenize() {
+		this.insertToken(tok)
+
+		// special case for %r, or request, token in apache logs, which is comprised
+		// of method, url, and protocol like "GET http://blah HTTP/1.0"
+		if len(tok.Value) == 1 && tok.Value == "\"" && this.msg.state.inquote && this.msg.state.start != len(s) && s[this.msg.state.start] != ' ' {
+			l := matchRequestMethods(s[this.msg.state.start:])
+			if l > 0 {
+				this.insertToken(Token{
+					Field: FieldUnknown,
+					Type:  TokenLiteral,
+					Value: s[this.msg.state.start : this.msg.state.start+l],
+				})
+
+				this.msg.state.inquote = false
+				this.msg.state.nxquote = false
+				this.msg.state.start += l
+			}
 		}
 	}
 
@@ -149,559 +156,342 @@ func (this *GeneralScanner) Tokenize(s string, seq Sequence) (Sequence, error) {
 		return nil, err
 	}
 
-	return seq, nil
-}
-
-type message struct {
-	data string
-
-	state struct {
-		// these are per token states
-		tokenType TokenType
-		tokenStop bool
-		dots      int
-		initDot   bool // Did the token start w/ a dot?
-		octets    int  // number of octets found for ipv4
-
-		// these are per message states
-		prevToken       Token
-		tokCount        int
-		cur, start, end int // cursor positions
-
-		backslash bool // Should the next quote be escaped?
-
-		inquote bool // Are we inside a quote such as ", ', <, [
-		chquote rune // Which quote character is it?
-		nxquote bool // Should the next quote be an open quote? See special case in scan()
-
-		hexState            int  // Current hex string state
-		hexStart            bool // Is the first char a :?
-		hexColons           int  // Total number of colons
-		hexSuccColons       int  // The current number of successive colons
-		hexMaxSuccColons    int  // Maximum number of successive colons
-		hexSuccColonsSeries int  // Number of successive colon series
-	}
+	return this.seq, nil
 }
 
 const (
-	hexStart = iota
-	hexChar1
-	hexChar2
-	hexChar3
-	hexChar4
-	hexColon
+	jsonStart = iota
+	jsonObjectStart
+	jsonObjectKey
+	jsonObjectColon
+	jsonObjectValue
+	jsonObjectEnd
+	jsonArrayStart
+	jsonArrayValue
+	jsonArraySeparator
+	jsonArrayEnd
 )
 
-// Scan is similar to Tokenize except it returns one token at a time
-func (this *message) scan() (Token, error) {
-	if this.state.start < this.state.end {
-		// Number of spaces skipped
-		nss := this.skipSpace(this.data[this.state.start:])
-		this.state.start += nss
+// ScanJson returns a Sequence, or a list of tokens, for the json string supplied.
+// Scan is not concurrent-safe, and the returned Sequence is only valid until the
+// next time any Scan*() method is called. The best practice would be to create
+// one Scanner for each goroutine.
+//
+// ScanJson flattens a json string into key=value pairs, and it performs the
+// following transformation:
+//   - all {, }, [, ], ", characters are removed
+//   - colon between key and value are changed to "="
+//   - nested objects have their keys concatenated with ".", so a json string like
+//   		"userIdentity": {"type": "IAMUser"}
+//     will be returned as
+//   		userIdentity.type=IAMUser
+//   - arrays are flattened by appending an index number to the end of the key,
+//     starting with 0, so a json string like
+//   		{"value":[{"open":"2014-08-16T13:00:00.000+0000"}]}
+//     will be returned as
+//   		value.0.open = 2014-08-16T13:00:00.000+0000
+//   - skips any key that has an empty value, so json strings like
+//   		"reference":""		or		"filterSet": {}
+//     will not show up in the Sequence
+func (this *Scanner) ScanJson(s string) (Sequence, error) {
+	this.msg.Data = s
+	this.msg.reset()
+	this.seq = this.seq[:0]
 
-		l, t, err := this.scanToken(this.data[this.state.start:])
-		if err != nil {
-			return Token{}, err
-		} else if l == 0 {
-			return Token{}, io.EOF
-		} else if t == TokenUnknown {
-			return Token{}, fmt.Errorf("unknown token encountered: %s\n%v", this.data[this.state.start:], t)
-		}
-
-		// remove any trailing spaces
-		s := 0 // trail space count
-		for this.data[this.state.start+l-1] == ' ' && l > 0 {
-			l--
-			s++
-		}
-
-		// For the special case of
-		// "9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] "GET http://WSsamples HTTP/1.1" 301 315"
-		// where we want to parse the stuff inside the quotes
-		if l == 1 && this.state.inquote == true && this.state.tokCount == 6 && this.state.prevToken.Value == "]" && this.data[this.state.start:this.state.start+l] == "\"" {
-			this.state.inquote = false
-			this.state.nxquote = false
-		}
-
-		tok := Token{Field: FieldUnknown, Type: t, Value: this.data[this.state.start : this.state.start+l]}
-		this.state.tokCount++
-		this.state.prevToken = tok
-		this.state.start += l + s
-
-		return tok, nil
-	}
-
-	return Token{}, io.EOF
-}
-
-func (this *message) skipSpace(data string) int {
-	// Skip leading spaces.
-	i := 0
-
-	for _, r := range data {
-		if !unicode.IsSpace(r) {
-			break
-		} else {
-			i++
-		}
-	}
-
-	return i
-}
-
-func (this *message) scanToken(data string) (int, TokenType, error) {
 	var (
-		tnode                                  = timeFsmRoot
-		tokenStop, timeStop, hexStop, hexValid bool
-		timeLen, hexLen, tokenLen              int
-		l                                      = len(data)
+		err error
+		tok Token
+
+		keys = make([]string, 0, 20) // collection keys
+		arrs = make([]int64, 0, 20)  // array index
+
+		state          = jsonStart // state
+		kquote, vquote bool        // quoted key, quoted value
 	)
 
-	this.resetTokenStates()
+	for tok, err = this.msg.Tokenize(); err == nil; tok, err = this.msg.Tokenize() {
+		// glog.Debugf("1. tok=%s, state=%d, kquote=%t, vquote=%t, depth=%d", tok, state, kquote, vquote, len(keys))
+		// glog.Debugln(keys)
+		// glog.Debugln(arrs)
 
-	// short circuit the time check
-	if l < 3 {
-		hexStop = true
-	}
+		switch state {
+		case jsonStart:
+			switch tok.Value {
+			case "{":
+				state = jsonObjectStart
+				keys = append(keys, "")
 
-	// short circuit the time check
-	if l < minTimeLength {
-		timeStop = true
-	}
-
-	for i, r := range data {
-		if !tokenStop {
-			tokenStop = this.tokenStep(i, r)
-
-			if !tokenStop {
-				tokenLen++
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting \"{\", got %q.", tok.Value)
 			}
-		}
 
-		if !hexStop {
-			hexValid, hexStop = this.hexStep(i, r)
+		case jsonObjectStart:
+			switch tok.Value {
+			case "{":
+				// Only reason this could happen is if we encountered an array of
+				// objects like [{"a":1}, {"b":2}]
+				arrs[len(arrs)-1]++
+				keys[len(keys)-1] = keys[len(keys)-2] + "." + strconv.FormatInt(arrs[len(arrs)-1], 10)
+				keys = append(keys, "")
 
-			if hexValid {
-				hexLen = i + 1
-			}
-		}
-
-		if !timeStop {
-			if tnode = timeStep(r, tnode); tnode == nil {
-				timeStop = true
-
-				if timeLen > 0 {
-					return timeLen, TokenTime, nil
+			case "\"":
+				// start quote, ignore, move on
+				//state = jsonObjectStart
+				if kquote = !kquote; !kquote {
+					return nil, fmt.Errorf("Invalid message. Expecting start quote for key, got end quote.")
 				}
-			} else if tnode.final == TokenTime {
-				if i+1 > timeLen {
-					timeLen = i + 1
+
+			case "}":
+				// got something like {}, ignore this key
+				if len(keys)-1 < 0 {
+					return nil, fmt.Errorf("Invalid message. Too many } characters.")
 				}
-			}
-		}
 
-		//log.Printf("i=%d, r=%c, tokenStop=%t, timeStop=%t, hexStop=%t", i, r, this.state.tokenStop, timeStop, hexStop)
-		// This means either we found something, or we have exhausted the string
-		if (tokenStop && timeStop && hexStop) || i == l-1 {
-			if timeLen > 0 {
-				return timeLen, TokenTime, nil
-			} else if hexLen > 0 && this.state.hexColons > 1 {
-				if this.state.hexColons == 5 && this.state.hexMaxSuccColons == 1 {
-					return hexLen, TokenMac, nil
-				} else if this.state.hexSuccColonsSeries == 1 ||
-					(this.state.hexColons == 7 && this.state.hexSuccColonsSeries == 0) {
+				keys = keys[:len(keys)-1]
+				state = jsonObjectEnd
 
-					return hexLen, TokenIPv6, nil
+			default:
+				if tok.Type == TokenLiteral {
+					//glog.Debugf("depth=%d, keys=%v", len(keys), keys)
+					switch len(keys) {
+					case 0:
+						return nil, fmt.Errorf("Invalid message. Expecting inside object, not so.")
+
+					case 1:
+						keys[0] = tok.Value
+
+					default:
+						keys[len(keys)-1] = keys[len(keys)-2] + "." + tok.Value
+					}
+
+					tok.Value = keys[len(keys)-1]
+					tok.isKey = true
+					this.insertToken(tok)
+					state = jsonObjectKey
+
 				} else {
-					return hexLen, TokenLiteral, nil
+					return nil, fmt.Errorf("Invalid message. Expecting string key, got %q.", tok.Value)
 				}
 			}
 
-			// glog.Debugf("i=%d, r=%c, tokenLen=%d, value=%q", i, r, tokenLen, data[:tokenLen])
-			// If token length is 0, it means we didn't find time, nor did we find
-			// a word, it cannot be space since we skipped all space. This means it
-			// is a single character literal, so return that.
-			if tokenLen == 0 {
-				return 1, TokenLiteral, nil
-			} else {
-				return tokenLen, this.state.tokenType, nil
-			}
-		}
-	}
+		case jsonObjectKey:
+			switch tok.Value {
+			case "\"":
+				// end quote, ignore, move on
+				//state = jsonObjectKey
+				if kquote = !kquote; kquote {
+					return nil, fmt.Errorf("Invalid message. Expecting end quote for key, got start quote.")
+				}
 
-	return len(data), this.state.tokenType, nil
-}
+			case ":":
+				if kquote {
+					return nil, fmt.Errorf("Invalid message. Expecting end quote for key, got %q.", tok.Value)
+				}
 
-func (this *message) tokenStep(i int, r rune) bool {
-	// glog.Debugf("1. i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
-	switch this.state.tokenType {
-	case TokenUnknown:
-		switch r {
-		case 'h', 'H':
-			this.state.tokenType = TokenURL
+				tok.Value = "="
+				this.insertToken(tok)
+				state = jsonObjectColon
 
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			this.state.tokenType = TokenInteger
-
-		// case '.':
-		// 	this.state.tokenType = TokenFloat
-		// 	this.state.initDot = true
-
-		case '/':
-			if this.state.prevToken.Type == TokenIPv4 {
-				this.state.tokenType = TokenLiteral
-				this.state.tokenStop = true
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting colon or quote, got %q.", tok.Value)
 			}
 
-		case '"', '\'':
-			this.state.tokenStop = true
-			this.state.tokenType = TokenLiteral
+		case jsonObjectColon:
+			switch tok.Value {
+			case "\"":
+				if vquote {
+					// if vquote is already true, that means we encountered something like ""
+					vquote = false
 
-			//glog.Debugf("i=%d, r=%c, inquote=%t, nxquote=%t, chquote=%c", i, r, this.state.inquote, this.state.nxquote, this.state.chquote)
+					// let's remove the key and "="
+					if len(this.seq) >= 2 {
+						this.seq = this.seq[:len(this.seq)-2]
+					}
 
-			if !this.state.inquote && this.state.nxquote {
-				// If we are not inside a quote now and we are at the beginning,
-				// then let's be inside the quote now. This is basically the
-				// beginning quotation mark.
-				this.state.inquote = true
-				this.state.chquote = r
-				this.state.nxquote = true
-			} else if this.state.inquote && this.state.chquote == r {
-				// If we are at the beginning of the data and we are inside a quote,
-				// then this is the ending quotation mark.
-				this.state.inquote = false
+					state = jsonObjectValue
+				} else {
+					// start quote, ignore, move on
+					vquote = true
+				}
+
+			case "[":
+				// Start of an array
+				state = jsonArrayStart
+				arrs = append(arrs, 0)
+				keys = append(keys, keys[len(keys)-1]+"."+strconv.FormatInt(arrs[len(arrs)-1], 10))
+
+				// let's remove the key and "="
+				if len(this.seq) >= 2 {
+					this.seq = this.seq[:len(this.seq)-2]
+				}
+
+			case "{":
+				state = jsonObjectStart
+				keys = append(keys, "")
+
+				if len(this.seq) >= 2 {
+					this.seq = this.seq[:len(this.seq)-2]
+				}
+
+			default:
+				state = jsonObjectValue
+				tok.isValue = true
+				this.insertToken(tok)
 			}
 
-			//glog.Debugf("i=%d, r=%c, inquote=%t, nxquote=%t, chquote=%c", i, r, this.state.inquote, this.state.nxquote, this.state.chquote)
+		case jsonObjectValue:
+			switch tok.Value {
+			case "\"":
+				// end quote, ignore, move on
+				//state = jsonObjectKey
+				if vquote = !vquote; vquote {
+					return nil, fmt.Errorf("Invalid message. Expecting end quote for value, got start quote.")
+				}
 
-		case '<':
-			this.state.tokenStop = true
-			this.state.tokenType = TokenLiteral
+			case "}":
+				// End of an object
+				if len(keys)-1 < 0 {
+					return nil, fmt.Errorf("Invalid message. Too many } characters.")
+				}
 
-			if !this.state.inquote {
-				// If we are not inside a quote now and we are at the beginning,
-				// then let's be inside the quote now. This is basically the
-				// beginning quotation mark.
-				this.state.inquote = true
-				this.state.chquote = r
+				keys = keys[:len(keys)-1]
+				state = jsonObjectEnd
+
+			case ",":
+				state = jsonObjectStart
+
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting '}', ',' or '\"', got %q.", tok.Value)
 			}
 
-		case '>':
-			this.state.tokenStop = true
-			this.state.tokenType = TokenLiteral
+		case jsonObjectEnd, jsonArrayEnd:
+			switch tok.Value {
+			case "}":
+				// End of an object
+				if len(keys)-1 < 0 {
+					return nil, fmt.Errorf("Invalid message. Too many } characters.")
+				}
 
-			if this.state.inquote && this.state.chquote == '<' {
-				// If we are at the beginning of the data and we are inside a quote,
-				// then this is the ending quotation mark.
-				this.state.inquote = false
+				keys = keys[:len(keys)-1]
+				state = jsonObjectEnd
+
+			case "]":
+				// End of an object
+				if len(arrs)-1 < 0 || len(keys)-1 < 0 {
+					return nil, fmt.Errorf("Invalid message. Mismatched ']' or '}' characters.")
+				}
+
+				keys = keys[:len(keys)-1]
+				arrs = arrs[:len(arrs)-1]
+				state = jsonArrayEnd
+
+			case ",":
+				state = jsonObjectStart
+				// state = jsonArraySeparator
+				// arrs[len(arrs)-1]++
+				// keys[len(keys)-2] = keys[len(keys)-3] + "." + strconv.FormatInt(arrs[len(arrs)-1], 10)
+
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting '}' or ',', got %q.", tok.Value)
 			}
 
-		case '\\':
-			this.state.tokenType = TokenLiteral
+		case jsonArraySeparator:
+			switch tok.Value {
+			case "{":
+				state = jsonObjectStart
+				keys = append(keys, "")
 
-		default:
-			this.state.tokenType = TokenLiteral
-			if !isLiteral(r) {
-				this.state.tokenStop = true
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting '{', got %q.", tok.Value)
 			}
-		}
 
-	case TokenURL:
-		//glog.Debugf("i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
-		switch {
-		case (i == 1 && (r == 't' || r == 'T')) ||
-			(i == 2 && (r == 't' || r == 'T')) ||
-			(i == 3 && (r == 'p' || r == 'P')) ||
-			(i == 4 && (r == 's' || r == 'S')) ||
-			((i == 4 || i == 5) && r == ':') ||
-			((i == 5 || i == 6) && r == '/') ||
-			((i == 6 || i == 7) && r == '/'):
+		case jsonArrayStart:
+			switch tok.Value {
+			case "\"":
+				// start quote, ignore, move on
+				//state = jsonArrayStart
+				if kquote = !kquote; !kquote {
+					return nil, fmt.Errorf("Invalid message. Expecting start quote for value, got end quote.")
+				}
 
-			this.state.tokenType = TokenURL
+			case "{":
+				state = jsonObjectStart
+				keys = append(keys, "")
 
-		default:
-			if i >= 6 && (!unicode.IsSpace(r) || (this.state.inquote && matchQuote(this.state.chquote, r))) {
-				// part of URL, keep going
-				//this.state.tokenType = TokenURL
-			} else if i == 4 && r == '/' {
-				// if it's /, then it's probably something like http/1.0 or http/1.1,
-				// let's keep it going
-				this.state.tokenType = TokenLiteral
-			} else if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
-				// no longer URL, turn into literal
-				this.state.tokenType = TokenLiteral
-			} else {
-				this.state.tokenStop = true
+			default:
+				if tok.Type == TokenLiteral {
+					//glog.Debugf("depth=%d, keys=%v", depth, keys)
+					this.insertToken(Token{
+						Field:   FieldUnknown,
+						Type:    TokenLiteral,
+						Value:   keys[len(keys)-1],
+						isKey:   true,
+						isValue: false,
+					})
 
-				// if there are 6 or less chars, then it can't be an URL, must be literal
-				if i < 6 {
-					this.state.tokenType = TokenLiteral
+					this.insertToken(Token{
+						Field:   FieldUnknown,
+						Type:    TokenLiteral,
+						Value:   "=",
+						isKey:   false,
+						isValue: false,
+					})
+
+					tok.Value = keys[len(keys)-1]
+					tok.isValue = true
+					this.insertToken(tok)
+					state = jsonArrayValue
+
+				} else {
+					return nil, fmt.Errorf("Invalid message. Expecting string key, got %q.", tok.Value)
 				}
 			}
-		}
 
-	case TokenInteger:
-		switch r {
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			//this.state.tokenType = TokenInteger
+		case jsonArrayValue:
+			switch tok.Value {
+			case "\"":
+				// end quote, ignore, move on
+				//state = jsonObjectKey
+				if vquote = !vquote; vquote {
+					return nil, fmt.Errorf("Invalid message. Expecting end quote for value, got start quote.")
+				}
 
-		case '.':
-			// this should be the ONLY dot this switch case should see
-			this.state.dots++
-			this.state.tokenType = TokenFloat
+			case "]":
+				// End of an object
+				if len(arrs)-1 < 0 || len(keys)-1 < 0 {
+					return nil, fmt.Errorf("Invalid message. Mismatched ']' or '}' characters.")
+				}
 
-		default:
-			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
-				// no longer URL, turn into literal
-				this.state.tokenType = TokenLiteral
-			} else {
-				this.state.tokenStop = true
+				keys = keys[:len(keys)-1]
+				arrs = arrs[:len(arrs)-1]
+				state = jsonArrayEnd
+
+			case ",":
+				state = jsonArrayStart
+				arrs[len(arrs)-1]++
+				keys[len(keys)-1] = keys[len(keys)-2] + "." + strconv.FormatInt(arrs[len(arrs)-1], 10)
+
+			default:
+				return nil, fmt.Errorf("Invalid message. Expecting ']', ',' or '\"', got %q.", tok.Value)
 			}
 		}
-
-	case TokenFloat:
-		switch r {
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			//this.state.tokenType = TokenFloat
-
-		case '.':
-			this.state.dots++
-			// this SHOULD only be the second dot we encountered...
-
-			// If this token started with a dot, then it can't be ipv4,
-			// must be literal
-			if this.state.initDot {
-				this.state.tokenType = TokenLiteral
-			} else {
-				// otherwise assume it's ipv4
-				// FIXME: will consider something like "123.." as the beginning of IPv4
-				this.state.tokenType = TokenIPv4
-			}
-
-		default:
-			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
-				// no longer URL, turn into literal
-				this.state.tokenType = TokenLiteral
-			} else {
-				this.state.tokenStop = true
-			}
-		}
-
-	case TokenLiteral:
-		if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
-			//this.state.tokenType = TokenLiteral
-		} else {
-			this.state.tokenStop = true
-		}
-
-	case TokenIPv4:
-		switch r {
-		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-			//this.state.tokenType = TokenFloat
-
-		case '.':
-			this.state.dots++
-			// this SHOULD only be the second dot we encountered...
-
-			// If this token started with a dot, then it can't be ipv4,
-			// must be literal
-			if this.state.initDot {
-				this.state.tokenType = TokenLiteral
-			} else {
-				// otherwise assume it's ipv4
-				this.state.tokenType = TokenIPv4
-			}
-
-		case '/':
-			this.state.tokenStop = true
-
-		default:
-			if isLiteral(r) || (this.state.inquote && !matchQuote(this.state.chquote, r)) {
-				// no longer URL, turn into literal
-				this.state.tokenType = TokenLiteral
-			} else {
-				this.state.tokenStop = true
-			}
-		}
+		//glog.Debugf("2. tok=%s, state=%d, kquote=%t, vquote=%t, depth=%d", tok, state, kquote, vquote, len(keys))
 	}
 
-	// glog.Debugf("2. i=%d, r=%c, tokenStop=%t, tokenType=%s", i, r, this.state.tokenStop, this.state.tokenType)
-
-	return this.state.tokenStop
-}
-
-// hexStep steps through a string and try to match a hex string of the format
-// - dead:beef:1234:5678:223:32ff:feb1:2e50 (ipv6 address)
-// - de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56 (mac address)
-// - 0:09:36 (literal)
-// - f0f0:f::1 (ipv6)
-// - and a few others in the scanner_test.go/hextests list
-//
-// The ipv6 rules are:
-// (http://computernetworkingnotes.com/ipv6-features-concepts-and-configurations/ipv6-address-types-and-formats.html)
-// - Whereas IPv4 addresses use a dotted-decimal format, where each byte ranges from
-//   0 to 255.
-// - IPv6 addresses use eight sets of four hexadecimal addresses (16 bits in each set),
-//   separated by a colon (:), like this: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
-//   (x would be a hexadecimal value). This notation is commonly called string notation.
-// - Hexadecimal values can be displayed in either lower- or upper-case for the numbers
-//   A–F.
-// - A leading zero in a set of numbers can be omitted; for example, you could either
-//   enter 0012 or 12 in one of the eight fields—both are correct.
-// - If you have successive fields of zeroes in an IPv6 address, you can represent
-//   them as two colons (::). For example,0:0:0:0:0:0:0:5 could be represented as ::5;
-//   and ABC:567:0:0:8888:9999:1111:0 could be represented asABC:567::8888:9999:1111:0.
-//   However, you can only do this once in the address: ABC::567::891::00 would be
-//   invalid since ::appears more than once in the address. The reason for this
-//   limitation is that if you had two or more repetitions, you wouldn’t know how many
-//   sets of zeroes were being omitted from each part. An unspecified address is
-//   represented as ::, since it contains all zeroes.
-//
-// first return value indicates whether this is a valid hex string
-// second return value indicates whether to stop scanning
-func (this *message) hexStep(i int, r rune) (bool, bool) {
-	switch this.state.hexState {
-	case hexStart:
-		switch {
-		case isHex(r):
-			this.state.hexState = hexChar1
-
-		case r == ':':
-			this.state.hexState = hexColon
-			this.state.hexColons++
-			this.state.hexSuccColons++
-			this.state.hexStart = true
-			this.state.hexState = hexColon
-
-			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
-				this.state.hexMaxSuccColons = this.state.hexSuccColons
-			}
-
-		default:
-			return false, true
-		}
-
-		return false, false
-
-	case hexColon:
-		switch {
-		case isHex(r):
-			this.state.hexState = hexChar1
-			this.state.hexSuccColons = 0
-
-			if this.state.hexColons > 0 {
-				return true, false
-			}
-
-		case r == ':':
-			this.state.hexSuccColons++
-			this.state.hexColons++
-
-			if this.state.hexSuccColons == 2 {
-				this.state.hexSuccColonsSeries++
-			}
-
-			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
-				this.state.hexMaxSuccColons = this.state.hexSuccColons
-			}
-
-			this.state.hexState = hexColon
-
-			// for the special case of "::" which is valid and represents an
-			// unspecified ip
-			if i == 1 {
-				return true, false
-			}
-
-		default:
-			if this.state.hexColons > 0 && unicode.IsSpace(r) {
-				return true, true
-			}
-			return false, true
-		}
-
-		return false, false
-
-	case hexChar1, hexChar2, hexChar3, hexChar4:
-		switch {
-		case this.state.hexState != hexChar4 && isHex(r):
-			this.state.hexState++
-			this.state.hexSuccColons = 0
-
-		case r == ':':
-			this.state.hexState = hexColon
-			this.state.hexColons++
-			this.state.hexSuccColons++
-
-			if this.state.hexSuccColons > this.state.hexMaxSuccColons {
-				this.state.hexMaxSuccColons = this.state.hexSuccColons
-			}
-
-		default:
-			if this.state.hexColons > 0 && unicode.IsSpace(r) {
-				return true, true
-			}
-			return false, true
-		}
-
-		if this.state.hexColons > 0 {
-			return true, false
-		}
-
-		return false, false
+	if err != nil && err != io.EOF {
+		return nil, err
 	}
 
-	return false, true
+	return this.seq, nil
 }
 
-func (this *message) reset() {
-	this.state.prevToken = Token{}
-	this.state.inquote = false
-	this.state.nxquote = true
-	this.state.start = 0
-	this.state.end = len(this.data)
-	this.state.cur = 0
-	this.state.backslash = false
-
-	this.resetTokenStates()
-}
-
-func (this *message) resetTokenStates() {
-	this.state.dots = 0
-	this.state.tokenType = TokenUnknown
-	this.state.tokenStop = false
-	this.state.initDot = false
-
-	this.resetHexStates()
-}
-
-func (this *message) resetHexStates() {
-	this.state.hexState = hexStart
-	this.state.hexStart = false
-	this.state.hexColons = 0
-	this.state.hexSuccColons = 0
-	this.state.hexMaxSuccColons = 0
-	this.state.hexSuccColonsSeries = 0
-}
-
-func isLetter(r rune) bool {
-	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r == '_' || r >= 0x80 && unicode.IsLetter(r)
-}
-
-func isLiteral(r rune) bool {
-	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '_' || r == '#' || r == '\\' || r == '%' || r == '*' || r == '@' || r == '$' || r == '?' || r == '.' || r == '&' || r == '/'
-}
-
-func isHex(r rune) bool {
-	return isDigit(r) || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
-}
-
-func isDigit(r rune) bool {
-	return r >= '0' && r <= '9'
-}
-
-// q - quote char in state
-// r - current char
-func matchQuote(q, r rune) bool {
-	return (((r == '"' || r == '\'') && r == q) || (r == '>' && q == '<'))
+func (this *Scanner) insertToken(tok Token) {
+	// For some reason this is consistently slightly faster than just append
+	if len(this.seq) >= cap(this.seq) {
+		this.seq = append(this.seq, tok)
+	} else {
+		i := len(this.seq)
+		this.seq = this.seq[:i+1]
+		this.seq[i] = tok
+	}
 }

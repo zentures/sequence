@@ -90,23 +90,30 @@ var (
 			"%msgtime% H = ( %srchost% ) [ %srcipv4% ] : %srcport% F = < %srcemail% > %action% RCPT < %dstemail% > : %reason-%",
 		},
 	}
+
+	parsetests3 = []struct {
+		msg, rule string
+	}{
+		{
+			`{"reference":"","roundTripDuration":206}`,
+			"roundTripDuration = %duration%",
+		},
+	}
 )
 
 func TestParserMatchPatterns(t *testing.T) {
-	parser := NewParser()
-	seq := make(Sequence, 0, 20)
+	parser := NewGeneralParser()
+	scanner := NewScanner()
 
 	for _, tc := range parsetests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.rule, seq)
+		seq, err := scanner.Scan(tc.rule)
 		require.NoError(t, err)
 		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		seq, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)
@@ -115,20 +122,38 @@ func TestParserMatchPatterns(t *testing.T) {
 }
 
 func TestParserParseMessages(t *testing.T) {
-	parser := NewParser()
-	seq := make(Sequence, 0, 20)
+	parser := NewGeneralParser()
+	scanner := NewScanner()
 
 	for _, tc := range parsetests2 {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.rule, seq)
+		seq, err := scanner.Scan(tc.rule)
 		require.NoError(t, err)
 		err = parser.Add(seq)
 		require.NoError(t, err, tc.rule)
 	}
 
 	for _, tc := range parsetests2 {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
+		require.NoError(t, err)
+		_, err = parser.Parse(seq)
+		require.NoError(t, err, tc.msg)
+		//glog.Debugln(seq.PrintTokens())
+	}
+}
+
+func TestParserParseJson(t *testing.T) {
+	parser := NewGeneralParser()
+	scanner := NewScanner()
+
+	for _, tc := range parsetests3 {
+		seq, err := scanner.Scan(tc.rule)
+		require.NoError(t, err)
+		err = parser.Add(seq)
+		require.NoError(t, err, tc.rule)
+	}
+
+	for _, tc := range parsetests3 {
+		seq, err := scanner.ScanJson(tc.msg)
 		require.NoError(t, err)
 		_, err = parser.Parse(seq)
 		require.NoError(t, err, tc.msg)

@@ -56,7 +56,7 @@ var (
 		{
 			"id=firewall time=\"2005-03-18 14:01:46\" fw=TOPSEC priv=6 recorder=kernel type=conn policy=414 proto=TCP rule=accept src=61.167.71.244 sport=35223 dst=210.82.119.211 dport=25 duration=27 inpkt=37 outpkt=39 sent=1770 rcvd=20926 smac=00:04:c1:8b:d8:82 dmac=00:0b:5f:b2:1d:80",
 			//"id = %string% time = \" %time% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %string% rule = %string% src = %ipv4% sport = %integer% dst = %ipv4% dport = %integer% duration = %integer% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %mac% dmac = %mac%",
-			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcipv4% sport = %srcport% dst = %dstipv4% dport = %dstport% duration = %integer% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %srcmac% dmac = %dstmac%",
+			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcipv4% sport = %srcport% dst = %dstipv4% dport = %dstport% duration = %duration% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %srcmac% dmac = %dstmac%",
 		},
 		{
 			"id=firewall time=\"2005-03-18 14:01:43\" fw=TOPSEC priv=4 recorder=kernel type=conn policy=504 proto=TCP rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82",
@@ -80,11 +80,10 @@ var (
 
 func TestAnalyzerMergeNodes(t *testing.T) {
 	atree := NewAnalyzer()
-	seq := make(Sequence, 0, 20)
+	scanner := NewScanner()
 
 	for _, data := range analyzerSshdSamples {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(data, seq)
+		seq, err := scanner.Scan(data)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err)
@@ -205,11 +204,10 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 
 func TestAnalyzerKeyValuePairs(t *testing.T) {
 	atree := NewAnalyzer()
-	seq := make(Sequence, 0, 20)
+	scanner := NewScanner()
 
 	for _, tc := range analyzerKVTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
@@ -247,19 +245,17 @@ func TestAnalyzerKeyValuePairs(t *testing.T) {
 
 func TestAnalyzerMatchPatterns(t *testing.T) {
 	atree := NewAnalyzer()
-	seq := make(Sequence, 0, 20)
+	scanner := NewScanner()
 
 	for _, tc := range analyzerSshTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
 	}
 
 	for _, tc := range analyzerKVTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		err = atree.Add(seq)
 		require.NoError(t, err, tc.msg)
@@ -268,20 +264,18 @@ func TestAnalyzerMatchPatterns(t *testing.T) {
 	atree.Finalize()
 
 	for _, tc := range analyzerSshTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
-		require.Equal(t, tc.pat, seq.String(), tc.msg, seq)
+		require.Equal(t, tc.pat, seq.String(), tc.msg+"\n"+seq.PrintTokens())
 	}
 
 	for _, tc := range analyzerKVTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		seq, err = atree.Analyze(seq)
 		require.NoError(t, err, tc.msg)
-		require.Equal(t, tc.pat, seq.String(), tc.msg, seq)
+		require.Equal(t, tc.pat, seq.String(), tc.msg+"\n"+seq.PrintTokens())
 	}
 }

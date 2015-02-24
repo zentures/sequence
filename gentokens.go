@@ -37,7 +37,7 @@ var (
 		{"%ipv6%", "TokenIPv6", "Token is an IPv6 address, not currently supported"},
 		{"%integer%", "TokenInteger", "Token is an integer number"},
 		{"%float%", "TokenFloat", "Token is a floating point number"},
-		{"%url%", "TokenURL", "Token is an URL, in the form of http://... or https://..."},
+		{"%url%", "TokenURI", "Token is an URL, in the form of http://... or https://..."},
 		{"%mac%", "TokenMac", "Token is a mac address"},
 		{"%string%", "TokenString", "Token is a string that reprensents multiple possible values"},
 		{"token__END__", "token__END__", "All field types must be inserted before this one"},
@@ -103,7 +103,7 @@ var (
 		{"%bytessent%", "FieldBytesSent", "TokenInteger", "The number of bytes sent"},
 		{"%pktsrecv%", "FieldPktsRecv", "TokenInteger", "The number of packets received"},
 		{"%pktssent%", "FieldPktsSent", "TokenInteger", "The number of packets sent"},
-		{"%duration%", "FieldDuration", "TokenString", "The duration of the session"},
+		{"%duration%", "FieldDuration", "TokenInteger", "The duration of the session"},
 		{"field__END__", "field__END__", "TokenString", "All field types must be inserted before this one"},
 	}
 )

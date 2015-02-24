@@ -15,15 +15,258 @@
 package sequence
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+func TestMatchRequestMethods(t *testing.T) {
+	for _, m := range methodtests {
+		l := matchRequestMethods(m.data + " ")
+		require.Equal(t, m.l, l, m.data)
+
+		l = matchRequestMethods(strings.ToLower(m.data) + " ")
+		require.Equal(t, m.l, l, m.data)
+	}
+}
+
+func TestMessageScanTokens(t *testing.T) {
+	msg := &Message{}
+
+	for _, tc := range tokentests {
+		var (
+			stop bool
+			l    int
+		)
+
+		msg.reset()
+
+		for i, r := range tc.data {
+			stop = msg.tokenStep(i, r)
+			if stop {
+				//glog.Debugf("i=%d, r=%c, stop=%t", i, r, stop)
+				if l == 0 {
+					l = 1
+				}
+				break
+			}
+			l++
+		}
+
+		require.Equal(t, tc.result, tc.data[:l], tc.data)
+		require.Equal(t, tc.ttype, msg.state.tokenType, tc.data)
+	}
+}
+
+func TestMessageScanHexString(t *testing.T) {
+	msg := &Message{}
+
+	for _, tc := range hextests {
+		var valid, stop bool
+
+		msg.resetHexStates()
+
+		for i, r := range tc.data {
+			valid, stop = msg.hexStep(i, r)
+			if stop {
+				break
+			}
+		}
+		valid = valid && msg.state.hexSuccColonsSeries < 2 && msg.state.hexMaxSuccColons < 3
+		require.Equal(t, tc.valid, valid, tc.data)
+	}
+}
+
+func TestScannerSignature(t *testing.T) {
+	scanner := NewScanner()
+
+	for _, tc := range sigtests {
+		seq, err := scanner.Scan(tc.data)
+		require.NoError(t, err, tc.data)
+		require.Equal(t, tc.sig, seq.Signature(), tc.data+"\n"+seq.PrintTokens())
+	}
+}
+
+func TestScannerScan(t *testing.T) {
+	runTestCases(t, generaltests, "general")
+}
+
+func TestScannerScanJson(t *testing.T) {
+	runTestCases(t, jsontests, "json")
+}
+
+func BenchmarkScannerScanGeneral(b *testing.B) {
+	benchmarkScanner(b, generaltests[0].data, "general")
+}
+
+func BenchmarkScannerScanJson(b *testing.B) {
+	benchmarkScanner(b, jsontests[3].data, "json")
+}
+
+func BenchmarkScannerScanJsonGeneral(b *testing.B) {
+	benchmarkScanner(b, jsontests[3].data, "general")
+}
+
+func benchmarkScanner(b *testing.B, data string, stype string) {
+	scanner := NewScanner()
+	l := int64(len(data))
+
+	var benchFunc func(string) (Sequence, error)
+
+	switch stype {
+	case "json":
+		benchFunc = scanner.ScanJson
+
+	default:
+		benchFunc = scanner.Scan
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		b.SetBytes(l)
+		benchFunc(data)
+	}
+}
+
+func runTestCases(t *testing.T, tests []testCase, stype string) {
+	scanner := NewScanner()
+
+	for _, tc := range tests {
+		var (
+			seq Sequence
+			err error
+		)
+
+		switch stype {
+		case "json":
+			seq, err = scanner.ScanJson(tc.data)
+
+		default:
+			seq, err = scanner.Scan(tc.data)
+		}
+
+		require.NoError(t, err, tc.data)
+
+		if len(tc.seq) == 0 {
+			require.FailNow(t, seq.PrintTokens())
+		} else {
+			for i, tok := range seq {
+				require.Equal(t, tc.seq[i], tok, tc.data)
+			}
+		}
+	}
+}
+
+type testCase struct {
+	data string
+	seq  Sequence
+}
+
 var (
+	methodtests = []struct {
+		data string
+		l    int
+	}{
+		{"GET", 3},
+		{"PUT", 3},
+		{"POST", 4},
+		{"DELETE", 6},
+		{"CONNECT", 7},
+		{"OPTIONS", 7},
+		{"TRACE", 5},
+		{"PATCH", 5},
+		{"PROPFIND", 8},
+		{"PROPPATCH", 9},
+		{"MKCOL", 5},
+		{"COPY", 4},
+		{"MOVE", 4},
+		{"LOCK", 4},
+		{"UNLOCK", 6},
+		{"VERSION_CONTROL", 15},
+		{"CHECKOUT", 8},
+		{"UNCHECKOUT", 10},
+		{"CHECKIN", 7},
+		{"UPDATE", 6},
+		{"LABEL", 5},
+		{"REPORT", 6},
+		{"MKWORKSPACE", 11},
+		{"MKACTIVITY", 10},
+		{"BASELINE_CONTROL", 16},
+		{"MERGE", 5},
+		{"INVALID", 7},
+	}
+
+	hextests = []struct {
+		data  string
+		valid bool
+	}{
+		{"f0::1", true},
+		{"f0f0::1", true},
+		{"1:2:3:4:5:6:1:2", true},
+		{"0:0:0:0:0:0:0:0", true},
+		{"1:2:3:4:5::7:8", true},
+		{"f0f0::f:1", true},
+		{"f0f0:f::1", true},
+		{"f0::1", true},
+		{"::2:3:4", true},
+		{"0:0:0:0:0:0:0:5", true},
+		{"::5", true},
+		{"::", true},
+		{"ABC:567:0:0:8888:9999:1111:0", true},
+		{"ABC:567::8888:9999:1111:0", true},
+		{"ABC:567::8888:9999:1111:0 ", true}, // space at the end
+		{"ABC::567::891::00", false},
+		{":::00", false},
+		{"00:04:c1:8b:d8:82", true},
+		{"de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", true},
+		{"00:0b:5f:b2:1d:80", true},
+		{"00:04:c1:8b:d8:82", true},
+		{"00:04:c1:8b:d8:82 ", true}, // space at end
+		{"0:09:23 ", true},
+		{"g:09:23 ", false},
+		{"dead:beef:1234:5678:223:32ff:feb1:2e50", true},
+		{"12345:32432:3232", false},
+	}
+
+	tokentests = []struct {
+		data   string
+		result string
+		ttype  TokenType
+	}{
+		{"http://WSsamples", "http://WSsamples", TokenURI},
+		{"123.456.78.23", "123.456.78.23", TokenIPv4},
+		{"egreetings@vishwak.com", "egreetings@vishwak.com", TokenLiteral},
+		{"(smtp:5.5.5.5)", "(", TokenLiteral},
+		{"smtp:5.5.5.5)", "smtp", TokenLiteral},
+		{":5.5.5.5)", ":", TokenLiteral},
+		{"5.5.5.5)", "5.5.5.5", TokenIPv4},
+		{"\"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "\"", TokenLiteral},
+		{"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "aws-cli/1.3.2", TokenLiteral},
+		{"\"", "\"", TokenLiteral},
+		{"arn:aws:iam::123456789012:user/Alice", "arn", TokenLiteral},
+		{":aws:iam::123456789012:user/Alice", ":", TokenLiteral},
+		{"aws:iam::123456789012:user/Alice", "aws", TokenLiteral},
+		{":iam::123456789012:user/Alice", ":", TokenLiteral},
+		{"iam::123456789012:user/Alice", "iam", TokenLiteral},
+		{"::123456789012:user/Alice", ":", TokenLiteral},
+		{":123456789012:user/Alice", ":", TokenLiteral},
+		{"123456789012:user/Alice", "123456789012", TokenInteger},
+		{":user/Alice", ":", TokenLiteral},
+		{"user/Alice", "user/Alice", TokenLiteral},
+		{"192.168.20.20/33", "192.168.20.20", TokenIPv4},
+		{"192.168 3", "192.168", TokenFloat},
+	}
+
 	sigtests = []struct {
 		data, sig string
 	}{
+		{
+			"2.0.0",
+			"",
+		},
 		{
 			"jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root",
 			"%time%[%integer%]:(:):;==%integer%=%integer%====",
@@ -78,10 +321,7 @@ var (
 		},
 	}
 
-	seqtests = []struct {
-		data string
-		seq  Sequence
-	}{
+	generaltests = []testCase{
 		{
 			"Jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "Jan 12 06:49:41"},
@@ -158,59 +398,53 @@ var (
 			},
 		},
 
-		{
-			"9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] \"GET http://WSsamples HTTP/1.1\" 301 315", Sequence{
-				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-				Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
-				Token{Type: TokenURL, Field: FieldUnknown, Value: "http://WSsamples"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.1"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "301"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "315"},
-			},
-		},
+		// {
+		// 	"9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] \"GET http://WSsamples HTTP/1.1\" 301 315", Sequence{
+		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET http://WSsamples HTTP/1.1"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "301"},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "315"},
+		// 	},
+		// },
 
-		{
-			"9.26.157.45 - - [16/Jan/2003:21:22:59 -0500] \"GET /WSsamples/ HTTP/1.1\" 200 1576", Sequence{
-				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.45"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-				Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "/WSsamples/"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.1"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "1576"},
-			},
-		},
+		// {
+		// 	"9.26.157.45 - - [16/Jan/2003:21:22:59 -0500] \"GET /WSsamples/ HTTP/1.1\" 200 1576", Sequence{
+		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.45"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET /WSsamples/ HTTP/1.1"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "1576"},
+		// 	},
+		// },
 
-		{
-			"209.36.88.3 - - [03/May/2004:01:19:07 +0000] \"GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0\" 200 27981", Sequence{
-				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-				Token{Type: TokenTime, Field: FieldUnknown, Value: "03/May/2004:01:19:07 +0000"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
-				Token{Type: TokenURL, Field: FieldUnknown, Value: "http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.0"},
-				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
-				Token{Type: TokenInteger, Field: FieldUnknown, Value: "27981"},
-			},
-		},
+		// {
+		// 	"209.36.88.3 - - [03/May/2004:01:19:07 +0000] \"GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0\" 200 27981", Sequence{
+		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "03/May/2004:01:19:07 +0000"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0"},
+		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
+		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "27981"},
+		// 	},
+		// },
 
 		{
 			"4/5/2012 17:55,172.23.1.101,1101,172.23.0.10,139, Generic Protocol Command Decode,3, [1:2100538:17] GPL NETBIOS SMB IPC$ unicode share access ,TCP TTL:128 TOS:0x0 ID:1643 IpLen:20 DgmLen:122 DF,***AP*** Seq: 0xCEF93F32  Ack: 0xC40C0BB  n: 0xFC9C  TcpLen: 20,", Sequence{
@@ -757,150 +991,411 @@ var (
 		// 		Token{Type: TokenLiteral, Field: FieldMethod, Value: "%method/10%"},
 		// 	},
 		// },
+
+		{
+			"9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] \"GET http://WSsamples HTTP/1.1\" 301 315", Sequence{
+				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+				Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
+				Token{Type: TokenURI, Field: FieldUnknown, Value: "http://WSsamples"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.1"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "301"},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "315"},
+			},
+		},
+
+		{
+			"209.36.88.3 - - [03/May/2004:01:19:07 +0000] \"GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0\" 200 27981", Sequence{
+				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+				Token{Type: TokenTime, Field: FieldUnknown, Value: "03/May/2004:01:19:07 +0000"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
+				Token{Type: TokenURI, Field: FieldUnknown, Value: "http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.0"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "27981"},
+			},
+		},
+
+		{
+			`175.185.9.6 - - [12/Jul/2013:15:56:54 +0000] "GET /organizations/exampleorg/data/firewall/nova_api HTTP/1.1" 200 "0.850" 452 "-" "Chef Client/0.10.2 (ruby-1.8.7-p302; ohai-0.6.4; x86_64-linux; +http://opscode.com)" "127.0.0.1:9460" "200" "0.849" "0.10.2" "version=1.0" "some_node.example.com" "2013-07-12T15:56:40Z" "2jmj7l5rSw0yVb/vlWAYkK/YBwk=" 985`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "175.185.9.6", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "12/Jul/2013:15:56:54 +0000", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "GET", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "/organizations/exampleorg/data/firewall/nova_api", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "HTTP/1.1", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "0.850", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "452", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Chef Client/0.10.2 (ruby-1.8.7-p302; ohai-0.6.4; x86_64-linux; +http://opscode.com)", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "127.0.0.1:9460", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "0.849", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "0.10.2", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "version=1.0", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "some_node.example.com", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2013-07-12T15:56:40Z", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "2jmj7l5rSw0yVb/vlWAYkK/YBwk=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "985", isKey: false, isValue: false},
+			},
+		},
+
+		{
+			`209.36.213.112 - - [03/May/2004:01:00:04 +0000] "GET http://www.toxzyyphvc.com/xray/peterson.asp?ProdID=00000&LastUpdate=00000000&Stocks=00:00000|00:000|00:0000|00:000|00:0000|00:0000|00:0000|00:0000|00:000|00:00000|00:000|00:000|00:000|00:0000|00:0000|00:000|00:000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:00000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000&UpdType=0 HTTP/1.0" 200 281`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "209.36.213.112", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "03/May/2004:01:00:04 +0000", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "GET", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenURI, Value: "http://www.toxzyyphvc.com/xray/peterson.asp?ProdID=00000&LastUpdate=00000000&Stocks=00:00000|00:000|00:0000|00:000|00:0000|00:0000|00:0000|00:0000|00:000|00:00000|00:000|00:000|00:000|00:0000|00:0000|00:000|00:000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:00000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000&UpdType=0", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "HTTP/1.0", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "281", isKey: false, isValue: false},
+			},
+		},
+
+		{
+			`2014-02-15T23:39:43.945958Z my-test-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 0.000057 200 200 0 29 "GET http://www.example.com:80/HTTP/1.1"`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-02-15T23:39:43.945958Z", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "my-test-loadbalancer", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "192.168.131.39", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "2817", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "10.0.0.1", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "80", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "0.000073", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "0.001048", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "0.000057", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "0", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "29", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "GET", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenURI, Value: "http://www.example.com:80/HTTP/1.1", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "\"", isKey: false, isValue: false},
+			},
+		},
+
+		// {
+		// 	"2010-03-12	23:51:20	SEA4	192.0.2.147	connect	2014	OK	bfd8a98bee0840d9b871b7f6ade9908f	rtmp://shqshne4jdp4b6.cloudfront.net/cfx/st​	key=value	http://player.longtailvideo.com/player.swf	http://www.longtailvideo.com/support/jw-player-setup-wizard?example=204	LNX%2010,0,32,18	-	-	-	-", Sequence{},
+		// },
+
+		// {
+		// 	"Feb  8 23:49:58 mail postfix/pipe[85979]: B9E532E0B: to=<userB@company.office>, orig_to=<userB@company.eu>, relay=dovecot, delay=0.19, delays=0.16/0/0/0.03, dsn=2.0.0, status=sent (delivered via dovecot service)", Sequence{},
+		// },
 	}
 
-	hextests = []struct {
-		data  string
-		valid bool
-	}{
-		{"f0::1", true},
-		{"f0f0::1", true},
-		{"1:2:3:4:5:6:1:2", true},
-		{"0:0:0:0:0:0:0:0", true},
-		{"1:2:3:4:5::7:8", true},
-		{"f0f0::f:1", true},
-		{"f0f0:f::1", true},
-		{"f0::1", true},
-		{"::2:3:4", true},
-		{"0:0:0:0:0:0:0:5", true},
-		{"::5", true},
-		{"::", true},
-		{"ABC:567:0:0:8888:9999:1111:0", true},
-		{"ABC:567::8888:9999:1111:0", true},
-		{"ABC:567::8888:9999:1111:0 ", true}, // space at the end
-		{"ABC::567::891::00", false},
-		{":::00", false},
-		{"00:04:c1:8b:d8:82", true},
-		{"de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", true},
-		{"00:0b:5f:b2:1d:80", true},
-		{"00:04:c1:8b:d8:82", true},
-		{"00:04:c1:8b:d8:82 ", true}, // space at end
-		{"0:09:23 ", true},
-		{"g:09:23 ", false},
-		{"dead:beef:1234:5678:223:32ff:feb1:2e50", true},
-		{"12345:32432:3232", false},
-	}
+	jsontests = []testCase{
+		{
+			`{"log-level":"INFO","message":"request/response","uri":"/ping","request":{"ssl-client-cert":null,"remote-addr":"10.11.22.33","headers":{"host":"itsman.staging.quinpress.com"},"server-port":3030,"content-length":null,"content-type":null,"character-encoding":null,"uri":"/ping","server-name":"xxxx.staging.strace.io","query-string":null,"body":"org.eclipse.jetty.server.HttpInput@51383a10","scheme":"http","request-method":"get"},"response":{"status":200,"body":"pong","headers":{"Access-Control-Allow-Origin":"*","content-type":"text/plain"}},"start-ts":1422427444553,"end-ts":1422427444554,"elapsed":1}`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "log-level", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "INFO", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "message", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request/response", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "/ping", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.ssl-client-cert", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.remote-addr", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "10.11.22.33", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.headers.host", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "itsman.staging.quinpress.com", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.server-port", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "3030", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.content-length", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.content-type", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.character-encoding", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.uri", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "/ping", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.server-name", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "xxxx.staging.strace.io", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.query-string", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.body", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "org.eclipse.jetty.server.HttpInput@51383a10", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.scheme", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "http", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "request.request-method", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "get", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "response.status", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "200", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "response.body", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "pong", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "response.headers.Access-Control-Allow-Origin", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "*", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "response.headers.content-type", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "text/plain", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "start-ts", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1422427444553", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "end-ts", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1422427444554", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "elapsed", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1", isKey: false, isValue: true},
+			},
+		},
 
-	tokentests = []struct {
-		data   string
-		result string
-		ttype  TokenType
-	}{
-		{"http://WSsamples", "http://WSsamples", TokenURL},
-		{"123.456.78.23", "123.456.78.23", TokenIPv4},
-		{"egreetings@vishwak.com", "egreetings@vishwak.com", TokenLiteral},
-		{"(smtp:5.5.5.5)", "(", TokenLiteral},
-		{"smtp:5.5.5.5)", "smtp", TokenLiteral},
-		{":5.5.5.5)", ":", TokenLiteral},
-		{"5.5.5.5)", "5.5.5.5", TokenIPv4},
-		{"\"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "\"", TokenLiteral},
-		{"aws-cli/1.3.2 Python/2.7.5 Windows/7\"", "aws-cli/1.3.2", TokenLiteral},
-		{"\"", "\"", TokenLiteral},
-		{"arn:aws:iam::123456789012:user/Alice", "arn", TokenLiteral},
-		{":aws:iam::123456789012:user/Alice", ":", TokenLiteral},
-		{"aws:iam::123456789012:user/Alice", "aws", TokenLiteral},
-		{":iam::123456789012:user/Alice", ":", TokenLiteral},
-		{"iam::123456789012:user/Alice", "iam", TokenLiteral},
-		{"::123456789012:user/Alice", ":", TokenLiteral},
-		{":123456789012:user/Alice", ":", TokenLiteral},
-		{"123456789012:user/Alice", "123456789012", TokenInteger},
-		{":user/Alice", ":", TokenLiteral},
-		{"user/Alice", "user/Alice", TokenLiteral},
-		{"192.168.20.20/33", "192.168.20.20", TokenIPv4},
-		{"192.168 3", "192.168", TokenFloat},
+		{
+			`{"EventTime":"2014-08-16T12:45:03-0400","URI":"myuri","uri_payload":{"value":[{"open":"2014-08-16T13:00:00.000+0000","close":"2014-08-16T23:00:00.000+0000","isOpen":true,"date":"2014-08-16"}],"Count":1}}`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "EventTime", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-08-16T12:45:03-0400", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "URI", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "myuri", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri_payload.value.0.open", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-08-16T13:00:00.000+0000", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri_payload.value.0.close", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-08-16T23:00:00.000+0000", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri_payload.value.0.isOpen", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "true", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri_payload.value.0.date", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-08-16", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "uri_payload.Count", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "1", isKey: false, isValue: true},
+			},
+		},
+
+		//`{"syslogTime":"2014-04-10T17:17:13.696190-04:00","originName":"nl-fldi-00374.wdw.disney.com","message":{"X-Correlation-ID":"35b39f06-ca3e-4cc4-b02b-fd7506ca0df","level":"AUDIT","message":"Call Trace:\nSeverity: AUDIT\nX-Log-ID: b263b047-f807-49b4-b23e-f9e24cca4fe5\nX-Correlation-ID: 35b39f06-ca3e-4cc4-b02b-fd7506ca0df6\nX-System-ID: SF\nX-CAST-ID: null\nX-Guest-ID: null\nX-CIP: null\nX-Origin-System-ID: NGE-GXP.LOAD2-VALID\nTimestamp: Thu Apr 10 17:17:13 EDT 2014\nEndpoint: http:\/\/nge-load2.wdw.disney.com:8080\/assembly\/guest\/027BEF2F38EB424487092304E0532BA1\/identifiers\nHeaders: {Accept=[application\/json], apim-uuid=[35b39f06-ca3e-4cc4-b02b-fd7506ca0df6], Authorization=[BEARER _wRHo7wU6auBVDyYtOvPCw], client-ip=[10.52.27.19], Content-Type=[null], host=[nge-load2.wdw.disney.com:8080], lg_header=[Interaction=STyp79nmrokvRi5NRQFEDzIK;Locus=1dqc\/PEB1A2KXW9Je6ENpg==;Flow=cO_n26sYiatu6P5LRQH2DjIK;Chain=SDyp79nmrokvRi5NRQFEDzIK;UpstreamOpID=tfYAwD7njpLD4nyIgA9gbw==;Path=drlsVAS58dNUoEnn\/v0lwQ==;name=E_5400-4DCkv3.3sjnOcTwB-3D2123A0-INITIATED;CPTime=1397164633684;name=U_5400-4DCkv3.3sjnOcTwB-3D2123A0-COMPLETED;CPTime=1397164633684;CallerAddress=nl-fldi-01200;CalleeAddress=nge-load2.wdw.disney.com;], user-agent=[Jakarta Commons-HttpClient\/3.1], via=[http\/1.1 APIMClusterDISCPerfPROD-R2.7.1[FE800000000000000217A4FFFE770CB0] (ApacheTrafficServer\/3.2.0)], x-correlation-id=[35b39f06-ca3e-4cc4-b02b-fd7506ca0df6], x-expected-ttl=[5], x-ext-base-url=[http:\/\/nge-load2.wdw.disney.com:8080\/assembly], x-forwarded-for=[10.52.27.19], x-origin-system-id=[NGE-GXP.LOAD2-VALID]}\nHTTP Method: GET\nHTTP Request Parameters: \n\n","time":"2014-04-10T21:17:13.702Z","start_time":"2014-04-03T14:59:11.851Z","logger":"com.wdpr.nge.common.logging.appender.slf4j.SLF4JLogAppender","grid":"Dev","application":"sf-asm","appliance":"load2","thread":"tomcat-http--4015","file":"?","line":"?"}}`, Sequence{},
+
+		{
+			`{"eventVersion": "1.0", "userIdentity": {"type": "IAMUser", "principalId": "EX_PRINCIPAL_ID", "arn": "arn:aws:iam::123456789012:user/Alice", "accessKeyId": "EXAMPLE_KEY_ID", "accountId": "123456789012", "userName": "Alice"}, "eventTime": "2014-03-06T21:22:54Z", "eventSource": "ec2.amazonaws.com", "eventName": "StartInstances", "awsRegion": "us-west-2", "sourceIPAddress": "205.251.233.176", "userAgent": "ec2-api-tools 1.6.12.2", "requestParameters": {"instancesSet": {"items": [{"instanceId": "i-ebeaf9e2"}] } }, "responseElements": {"instancesSet": {"items": [{"instanceId": "i-ebeaf9e2", "currentState": {"code": 0, "name": "pending"}, "previousState": {"code": 80, "name": "stopped"} }] } } }`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventVersion", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "1.0", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.type", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "IAMUser", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.principalId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "EX_PRINCIPAL_ID", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.arn", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:iam::123456789012:user/Alice", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.accessKeyId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "EXAMPLE_KEY_ID", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.accountId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "123456789012", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.userName", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Alice", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventTime", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-03-06T21:22:54Z", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventSource", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "ec2.amazonaws.com", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventName", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "StartInstances", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "awsRegion", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "us-west-2", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "sourceIPAddress", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "205.251.233.176", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userAgent", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "ec2-api-tools 1.6.12.2", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "requestParameters.instancesSet.items.0.instanceId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "i-ebeaf9e2", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements.instancesSet.items.0.instanceId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "i-ebeaf9e2", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements.instancesSet.items.0.currentState.code", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "0", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements.instancesSet.items.0.currentState.name", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "pending", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements.instancesSet.items.0.previousState.code", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "80", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements.instancesSet.items.0.previousState.name", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "stopped", isKey: false, isValue: true},
+			},
+		},
+
+		{
+			`{"eventVersion": "1.01", "userIdentity": {"type": "IAMUser", "principalId": "XXXXXXXXXXXXXXXXXXXX", "arn": "arn:aws:iam::012345678901:user/rhendriks", "accountId": "012345678901", "accessKeyId": "XXXXXXXXXXXXXXXXXXXX", "userName": "rhendriks"}, "eventTime": "2014-01-31T12:00:00Z", "eventSource": "ec2.amazonaws.com", "eventName": "DescribeInstances", "awsRegion": "us-east-1", "sourceIPAddress": "11.111.111.111", "userAgent": "aws-sdk-ruby/1.33.0 ruby/1.9.3 x86_64-linux", "requestParameters": {"instancesSet": {"items": [{"instanceId": "i-01234567"}] }, "filterSet": {} }, "responseElements": null, "requestID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa", "eventID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa"}`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventVersion", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenFloat, Value: "1.01", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.type", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "IAMUser", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.principalId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "XXXXXXXXXXXXXXXXXXXX", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.arn", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:iam::012345678901:user/rhendriks", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.accountId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "012345678901", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.accessKeyId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "XXXXXXXXXXXXXXXXXXXX", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userIdentity.userName", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "rhendriks", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventTime", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-01-31T12:00:00Z", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventSource", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "ec2.amazonaws.com", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventName", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "DescribeInstances", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "awsRegion", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "us-east-1", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "sourceIPAddress", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "11.111.111.111", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "userAgent", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "aws-sdk-ruby/1.33.0 ruby/1.9.3 x86_64-linux", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "requestParameters.instancesSet.items.0.instanceId", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "i-01234567", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "responseElements", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "null", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "requestID", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventID", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa", isKey: false, isValue: true},
+			},
+		},
+
+		{
+			`{"reference":"","roundTripDuration":206}`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "roundTripDuration", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "206", isKey: false, isValue: true},
+			},
+		},
+
+		{
+			`{"Version": "2012-10-17", "Statement": [{"Sid": "Put bucket policy needed for audit logging", "Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::193672423079:user/logs"}, "Action": "s3:PutObject", "Resource": "arn:aws:s3:::AuditLogs/*"}, {"Sid": "Get bucket policy needed for audit logging ", "Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::193672423079:user/logs"}, "Action": "s3:GetBucketAcl", "Resource": "arn:aws:s3:::AuditLogs"} ] }`, Sequence{
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Version", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "2012-10-17", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.0.Sid", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Put bucket policy needed for audit logging", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.0.Effect", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Allow", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.0.Principal.AWS", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:iam::193672423079:user/logs", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.0.Action", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "s3:PutObject", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.0.Resource", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:s3:::AuditLogs/*", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.1.Sid", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Get bucket policy needed for audit logging", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.1.Effect", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Allow", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.1.Principal.AWS", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:iam::193672423079:user/logs", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.1.Action", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "s3:GetBucketAcl", isKey: false, isValue: true},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Statement.1.Resource", isKey: true, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "arn:aws:s3:::AuditLogs", isKey: false, isValue: true},
+			},
+		},
 	}
 )
-
-func TestMessageScanTokens(t *testing.T) {
-	msg := &message{}
-
-	for _, tc := range tokentests {
-		var (
-			stop bool
-			l    int
-		)
-
-		msg.resetTokenStates()
-
-		for i, r := range tc.data {
-			stop = msg.tokenStep(i, r)
-			if stop {
-				if l == 0 {
-					l = 1
-				}
-				break
-			}
-			l++
-		}
-
-		require.Equal(t, tc.result, tc.data[:l], tc.data)
-		require.Equal(t, tc.ttype, msg.state.tokenType, tc.data)
-	}
-}
-
-func TestMessageScanHexString(t *testing.T) {
-	msg := &message{}
-
-	for _, tc := range hextests {
-		var valid, stop bool
-
-		msg.resetHexStates()
-
-		for i, r := range tc.data {
-			valid, stop = msg.hexStep(i, r)
-			if stop {
-				break
-			}
-		}
-		valid = valid && msg.state.hexSuccColonsSeries < 2 && msg.state.hexMaxSuccColons < 3
-		require.Equal(t, tc.valid, valid, tc.data)
-	}
-}
-
-func TestGeneralScannerSignature(t *testing.T) {
-	seq := make(Sequence, 0, 20)
-	for _, tc := range sigtests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.data, seq)
-		require.NoError(t, err)
-		require.Equal(t, tc.sig, seq.Signature(), tc.data+"\n"+seq.PrintTokens())
-	}
-}
-
-func TestGeneralScannerTokenize(t *testing.T) {
-	seq := make(Sequence, 0, 20)
-	for _, tc := range seqtests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.data, seq)
-		require.NoError(t, err)
-		for i, tok := range seq {
-			require.Equal(t, tc.seq[i], tok, tc.data)
-		}
-	}
-}
-
-func BenchmarkGeneralScannerOne(b *testing.B) {
-	seq := make(Sequence, 0, 20)
-	data := sigtests[0].data
-	for i := 0; i < b.N; i++ {
-		seq = seq[:0]
-		DefaultScanner.Tokenize(data, seq)
-	}
-}
-
-// func TestGeneralScannerCloudTrail(t *testing.T) {
-// 	data := `{"Records": [{"eventVersion": "1.0", "userIdentity": {"type": "IAMUser", "principalId": "EX_PRINCIPAL_ID", "arn": "arn:aws:iam::123456789012:user/Alice", "accountId": "123456789012", "accessKeyId": "EXAMPLE_KEY_ID", "userName": "Alice"}, "eventTime": "2014-03-25T20:17:37Z", "eventSource": "iam.amazonaws.com", "eventName": "CreateRole", "awsRegion": "us-east-1", "sourceIPAddress": "127.0.0.1", "userAgent": "aws-cli/1.3.2 Python/2.7.5 Windows/7", "requestParameters": {"assumeRolePolicyDocument": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"\", \n\"Effect\": \"Allow\",\n      \"Principal\": {\n        \"AWS\": \"arn:aws:iam::210987654321:root\"\n      },\n      \"Action\": \"sts:AssumeRole\"\n    }\n  ]\n}", "roleName": "TestRole"}, "responseElements": {"role": {"assumeRolePolicyDocument": "%7B%0A%20%20%22Version%22%3A%20%222012-10-17%22%2C%0A%20%20%22Statement%22%3A%20%5B%0A%20%20%20%20%7B%0A%20%20%20%20%20%20%22Sid%22%3A%20%22%22%2C%0A%20%20%20%20%20%20%22Effect%22%3A%20%22Allow%22%2C%0A%20%20%20%20%20%20%22Principal%22%3A%20%7B%0A%20%20%20%20%20%20%20%20%22AWS%22%3A%20%22arn%3Aaws%3Aiam%3A%3A803981987763%3Aroot%22%0A%20%20%20%20%20%20%7D%2C%0A%20%20%20%20%20%20%22Action%22%3A%20%22sts%3AAssumeRole%22%0A%20%20%20%20%7D%0A%20%20%5D%0A%7D", "roleName": "TestRole", "roleId": "AROAIUU2EOWSWPGX2UJUO", "arn": "arn:aws:iam::123456789012:role/TestRole", "createDate": "Mar 25, 2014 8:17:37 PM", "path": "/"} } }] }`
-// 	seq := make(Sequence, 0, 20)
-// 	seq, _ = DefaultScanner.Tokenize(data, seq)
-// 	log.Println(seq.PrintTokens())
-// }

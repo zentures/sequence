@@ -87,6 +87,7 @@ var (
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "ssh2", isKey: false, isValue: false},
 			},
 		},
+
 		{
 			"209.36.88.3 - - [03/may/2004:01:19:07 +0000] \"get http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectrange&dr=0month&so=relevance&st=nw&ss=afr&sf=article&rc=00&clspage=0&docid=fin0000000r0jl000d00 http/1.0\" 200 27981", Sequence{
 				Token{Field: FieldSrcIPv4, Type: TokenIPv4, Value: "209.36.88.3", isKey: false, isValue: false},
@@ -219,7 +220,7 @@ var (
 				Token{Field: FieldDstPort, Type: TokenInteger, Value: "25", isKey: false, isValue: true},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "duration", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
-				Token{Field: FieldUnknown, Type: TokenInteger, Value: "27", isKey: false, isValue: true},
+				Token{Field: FieldDuration, Type: TokenInteger, Value: "27", isKey: false, isValue: true},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "inpkt", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenInteger, Value: "37", isKey: false, isValue: true},
@@ -244,11 +245,10 @@ var (
 )
 
 func TestAnalyzeSequence(t *testing.T) {
-	seq := make(Sequence, 0, 20)
+	scanner := NewScanner()
 
 	for _, tc := range seqAnalyzeTests {
-		seq = seq[:0]
-		seq, err := DefaultScanner.Tokenize(tc.msg, seq)
+		seq, err := scanner.Scan(tc.msg)
 		require.NoError(t, err)
 		seq = analyzeSequence(seq)
 		//glog.Debugln(seq.PrintTokens())

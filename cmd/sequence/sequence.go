@@ -279,6 +279,7 @@ var (
 	patdir     string
 	cpuprofile string
 	workers    int
+	format     string
 
 	quit chan struct{}
 	done chan struct{}
@@ -291,14 +292,17 @@ func init() {
 	done = make(chan struct{})
 
 	scanCmd.Flags().StringVarP(&inmsg, "msg", "m", "", "message to tokenize")
+	scanCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
 	scanCmd.Run = scan
 
+	analyzeCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
 	analyzeCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required")
 	analyzeCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
 	analyzeCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used, optional")
 	analyzeCmd.Flags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
 	analyzeCmd.Run = analyze
 
+	parseCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
 	parseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
 	parseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, required")
 	parseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
@@ -308,11 +312,13 @@ func init() {
 	benchCmd.AddCommand(benchScanCmd)
 	benchCmd.AddCommand(benchParseCmd)
 
+	benchScanCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
 	benchScanCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
 	benchScanCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
 	benchScanCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
 	benchScanCmd.Run = benchScan
 
+	benchParseCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
 	benchParseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
 	benchParseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "pattern file, required")
 	benchParseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
@@ -363,12 +369,8 @@ func profile() {
 }
 
 func scan(cmd *cobra.Command, args []string) {
-	seq := make(sequence.Sequence, 0, 20)
-	seq, err := sequence.DefaultScanner.Tokenize(inmsg, seq)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	scanner := sequence.NewScanner()
+	seq := scanMessage(scanner, inmsg)
 	fmt.Println(seq.PrintTokens())
 }
 
@@ -381,12 +383,11 @@ func analyze(cmd *cobra.Command, args []string) {
 
 	parser := buildParser()
 	analyzer := sequence.NewAnalyzer()
+	scanner := sequence.NewScanner()
 
 	// Open input file
 	iscan, ifile := openFile(infile)
 	defer ifile.Close()
-
-	seq := make(sequence.Sequence, 0, 20)
 
 	// For all the log messages, if we can't parse it, then let's add it to the
 	// analyzer for pattern analysis
@@ -396,11 +397,7 @@ func analyze(cmd *cobra.Command, args []string) {
 			continue
 		}
 
-		seq = seq[:0]
-		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
-		if err != nil {
-			log.Fatal(err)
-		}
+		seq := scanMessage(scanner, line)
 
 		if _, err := parser.Parse(seq); err != nil {
 			analyzer.Add(seq)
@@ -426,11 +423,7 @@ func analyze(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		seq = seq[:0]
-		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
-		if err != nil {
-			log.Fatal(err)
-		}
+		seq := scanMessage(scanner, line)
 
 		pseq, err := parser.Parse(seq)
 		if err == nil {
@@ -485,7 +478,7 @@ func parse(cmd *cobra.Command, args []string) {
 	profile()
 
 	parser := buildParser()
-	seq := make(sequence.Sequence, 0, 20)
+	scanner := sequence.NewScanner()
 
 	iscan, ifile := openFile(infile)
 	defer ifile.Close()
@@ -503,17 +496,13 @@ func parse(cmd *cobra.Command, args []string) {
 		}
 		n++
 
-		seq = seq[:0]
-		seq, err := sequence.DefaultScanner.Tokenize(line, seq)
-		if err != nil {
-			log.Fatal(err)
-		}
+		seq := scanMessage(scanner, line)
 
-		pseq, err := parser.Parse(seq)
+		seq, err := parser.Parse(seq)
 		if err != nil {
 			log.Printf("Error (%s) parsing: %s", err, line)
 		} else {
-			fmt.Fprintf(ofile, "%s\n%s\n\n", line, pseq.PrintTokens())
+			fmt.Fprintf(ofile, "%s\n%s\n\n", line, seq.PrintTokens())
 		}
 	}
 
@@ -534,7 +523,6 @@ func benchScan(cmd *cobra.Command, args []string) {
 	var lines []string
 	var totalSize int
 	n := 0
-	seq := make(sequence.Sequence, 0, 20)
 
 	for iscan.Scan() {
 		line := iscan.Text()
@@ -552,9 +540,9 @@ func benchScan(cmd *cobra.Command, args []string) {
 	now := time.Now()
 
 	if workers == 1 {
+		scanner := sequence.NewScanner()
 		for _, line := range lines {
-			seq = seq[:0]
-			sequence.DefaultScanner.Tokenize(line, seq)
+			scanMessage(scanner, line)
 		}
 	} else {
 		var wg sync.WaitGroup
@@ -564,9 +552,10 @@ func benchScan(cmd *cobra.Command, args []string) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				scanner := sequence.NewScanner()
+
 				for line := range msgpipe {
-					seq = seq[:0]
-					sequence.DefaultScanner.Tokenize(line, seq)
+					scanMessage(scanner, line)
 				}
 			}()
 		}
@@ -615,14 +604,10 @@ func benchParse(cmd *cobra.Command, args []string) {
 	now := time.Now()
 
 	if workers == 1 {
-		seq := make(sequence.Sequence, 0, 20)
+		scanner := sequence.NewScanner()
+
 		for _, line := range lines {
-			seq = seq[:0]
-			seq, err := sequence.DefaultScanner.Tokenize(line, seq)
-			if err != nil {
-				log.Fatal(err)
-			}
-			parser.Parse(seq)
+			parser.Parse(scanMessage(scanner, line))
 		}
 	} else {
 		var wg sync.WaitGroup
@@ -632,14 +617,10 @@ func benchParse(cmd *cobra.Command, args []string) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				seq := make(sequence.Sequence, 0, 20)
+				scanner := sequence.NewScanner()
+
 				for line := range msgpipe {
-					seq = seq[:0]
-					seq, err := sequence.DefaultScanner.Tokenize(line, seq)
-					if err != nil {
-						log.Fatal(err)
-					}
-					parser.Parse(seq)
+					parser.Parse(scanMessage(scanner, line))
 				}
 			}()
 		}
@@ -658,11 +639,31 @@ func benchParse(cmd *cobra.Command, args []string) {
 	<-done
 }
 
-func buildParser() *sequence.Parser {
-	parser := sequence.NewParser()
+func scanMessage(scanner *sequence.Scanner, data string) sequence.Sequence {
+	var (
+		seq sequence.Sequence
+		err error
+	)
+
+	switch format {
+	case "json":
+		seq, err = scanner.ScanJson(data)
+
+	default:
+		seq, err = scanner.Scan(data)
+	}
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	return seq
+}
+
+func buildParser() *sequence.GeneralParser {
+	parser := sequence.NewGeneralParser()
+	scanner := sequence.NewScanner()
 
 	var files []string
-	seq := make(sequence.Sequence, 0, 20)
 
 	if patdir != "" {
 		files = getDirOfFiles(patdir)
@@ -682,8 +683,7 @@ func buildParser() *sequence.Parser {
 				continue
 			}
 
-			seq = seq[:0]
-			seq, err := sequence.DefaultScanner.Tokenize(line, seq)
+			seq, err := scanner.Scan(line)
 			if err != nil {
 				log.Fatal(err)
 			}

@@ -23,6 +23,9 @@ import (
 //go:generate go run gentokens.go -- tokens.go
 //go:generate go fmt tokens.go
 
+//go:generate go run genmethods.go -- reqmethods.go
+//go:generate go fmt reqmethods.go
+
 var (
 	ErrNoMatch = errors.New("sequence: no pattern matched for this message")
 )

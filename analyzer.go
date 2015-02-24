@@ -1063,7 +1063,7 @@ LOOP:
 					fexists[FieldMsgTime] = true
 				}
 
-			case TokenURL:
+			case TokenURI:
 				if !fexists[FieldObject] {
 					seq[i].Field = FieldObject
 					seq[i].Type = seq[i].Field.TokenType()
