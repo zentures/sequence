@@ -232,8 +232,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/strace/sequence"
 	"github.com/surge/glog"
+	"github.com/trustpath/sequence"
 )
 
 var (
