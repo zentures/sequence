@@ -20,6 +20,15 @@ import (
 	"sync"
 )
 
+const (
+	metaMinus = "-"
+	metaPlus  = "+"
+	metaStar  = "*"
+
+	partialMatchWeight = 1
+	fullMatchWeight    = 2
+)
+
 // Parser is a tree-based parsing engine for log messages. It builds a parsing tree
 // based on pattern sequence supplied, and for each message sequence, returns the
 // matching pattern sequence. Each of the message tokens will be marked with the
@@ -34,11 +43,12 @@ type parseNode struct {
 	Token
 
 	leaf, // is this a leaf?
-	rest, // absorb the rest of the string?
 	parent bool // is this parent, or does this have child(ren)?
 
+	minus bool // absorb the rest of the string?
+
 	// token types children
-	tc [TokenTypesCount][]*parseNode
+	tc [][]*parseNode
 
 	// literal children
 	lc map[string]*parseNode
@@ -65,11 +75,12 @@ func NewGeneralParser() *GeneralParser {
 func newParseNode() *parseNode {
 	return &parseNode{
 		lc: make(map[string]*parseNode),
+		tc: make([][]*parseNode, TokenTypesCount),
 	}
 }
 
 func (this *parseNode) String() string {
-	return fmt.Sprintf("node=%s, leaf=%t, parent=%t, rest=%t", this.Token.String(), this.leaf, this.parent, this.rest)
+	return fmt.Sprintf("node=%s, leaf=%t, parent=%t, minus=%t", this.Token.String(), this.leaf, this.parent, this.minus)
 }
 
 // Add will add a single pattern sequence to the parser tree. This effectively
@@ -79,38 +90,29 @@ func (this *GeneralParser) Add(seq Sequence) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
-	cur := this.root
+	parent := this.root
+	var grandparent *parseNode = nil
 
 	for _, token := range seq {
 		vl := len(token.Value)
-		more, rest := false, false
+		//minus, plus, star := false, false, false
 
 		if vl >= 2 && token.Value[0] == '%' && token.Value[vl-1] == '%' {
-			switch token.Value[vl-2] {
-			case metaMore:
-				token.Value = token.Value[:vl-2] + "%"
-				more = true
-			case metaRest:
-				token.Value = token.Value[:vl-2] + "%"
-				rest = true
-			}
-
-			if f := name2FieldType(token.Value); f != FieldUnknown {
-				token.Field = f
-				token.Type = f.TokenType()
-			} else if t := name2TokenType(token.Value); t != TokenUnknown {
-				token.Type = t
-				token.Field = FieldUnknown
+			var err error
+			if token, err = processFieldToken(token); err != nil {
+				return err
 			}
 		}
+
+		//log.Printf("add token=%s", token)
 
 		var found *parseNode
 
 		switch {
 		case token.Type != TokenUnknown && token.Type != TokenLiteral:
 			// token nodes
-			if cur.tc[token.Type] != nil {
-				for _, n := range cur.tc[token.Type] {
+			if parent.tc[token.Type] != nil {
+				for _, n := range parent.tc[token.Type] {
 					if n.Type == token.Type && n.Field == token.Field {
 						found = n
 						break
@@ -121,38 +123,73 @@ func (this *GeneralParser) Add(seq Sequence) error {
 			if found == nil {
 				found = newParseNode()
 				found.Token = token
-				cur.tc[token.Type] = append(cur.tc[token.Type], found)
-				cur.parent = true
+				parent.tc[found.Type] = append(parent.tc[found.Type], found)
+				parent.parent = true
 			}
 
-			if more {
-				found.tc[token.Type] = append(found.tc[token.Type], found)
+			if token.plus || token.star {
+				found.tc[found.Type] = append(found.tc[found.Type], found)
 				found.parent = true
 			}
 
-			if rest {
-				found.rest = rest
-			}
+			found.minus, found.plus, found.star = token.minus, token.plus, token.star
 
 		case token.Type == TokenLiteral:
 			var ok bool
 			v := strings.ToLower(token.Value)
-			if found, ok = cur.lc[v]; !ok {
+			if found, ok = parent.lc[v]; !ok {
 				found = newParseNode()
 				found.Token = token
 				found.Value = v
-				cur.lc[v] = found
-				cur.parent = true
+				parent.lc[v] = found
+				parent.parent = true
 			}
 		}
 
-		//glog.Debugf("Added %s", found)
-		cur = found
+		if grandparent != nil {
+			var grandchild *parseNode = nil
+			var ok = false
+
+			switch {
+			case found.Type != TokenUnknown && found.Type != TokenLiteral:
+				if grandparent.tc[found.Type] != nil {
+					for _, n := range grandparent.tc[found.Type] {
+						if n.Type == found.Type && n.Field == found.Field {
+							grandchild = n
+							break
+						}
+					}
+				}
+
+				if grandchild == nil {
+					grandparent.tc[found.Type] = append(grandparent.tc[found.Type], found)
+					grandparent.parent = true
+				}
+
+			case found.Type == TokenLiteral:
+				if grandchild, ok = grandparent.lc[found.Value]; !ok {
+					grandparent.lc[found.Value] = found
+					grandparent.parent = true
+				}
+			}
+
+		}
+
+		if found.star {
+			grandparent = parent
+		} else {
+			grandparent = nil
+		}
+
+		parent = found
 	}
 
-	cur.leaf = true
+	parent.leaf = true
 
-	//fmt.Printf("parser.go/AddPattern(): count = %d, height = %d\n", msg.Count(), this.height)
+	if grandparent != nil {
+		grandparent.leaf = true
+	}
+
 	if len(seq) > this.height {
 		this.height = len(seq) + 1
 	}
@@ -173,10 +210,8 @@ func (this *GeneralParser) Parse(seq Sequence) (Sequence, error) {
 		}
 	}
 
-	//glog.Debugln(seq.PrintTokens())
-
 	var (
-		cur stackParseNode
+		parent stackParseNode
 
 		// Keep track of the path we have walked
 		path = make(Sequence, len(seq))
@@ -191,37 +226,37 @@ func (this *GeneralParser) Parse(seq Sequence) (Sequence, error) {
 
 	for len(toVisit) > 0 {
 		// pop the last element from the toVisit stack
-		toVisit, cur = toVisit[:len(toVisit)-1], toVisit[len(toVisit)-1]
+		toVisit, parent = toVisit[:len(toVisit)-1], toVisit[len(toVisit)-1]
 
-		//glog.Debugf("cur=%s, len(seq)=%d", cur.String(), len(seq))
+		//log.Printf("parent=%s, len(seq)=%d", parent.String(), len(seq))
 
-		// cur is the current token, if it's added to the list, that means it matched
+		// parent is the current token, if it's added to the list, that means it matched
 		// the last token, which means it should be part of the path. If it's level 0,
 		// or root level, don't add it.
-		if cur.level > 0 {
-			if len(path) < cur.level {
+		if parent.level > 0 {
+			if len(path) < parent.level {
 				path = append(path, Token{})
 			}
-			path = path[:cur.level]
+			path = path[:parent.level]
 
-			path[cur.level-1] = cur.node.Token
-			path[cur.level-1].Value = cur.value
+			path[parent.level-1] = parent.node.Token
+			path[parent.level-1].Value = parent.value
 		}
 
-		if cur.node.leaf {
-			if cur.node.rest {
+		if parent.node.leaf {
+			if parent.node.minus {
 				l := len(path) - 1
-				for i := cur.level; i < len(seq); i++ {
+				for i := parent.level; i < len(seq); i++ {
 					path[l].Value += " " + seq[i].Value
 				}
 			}
 
-			if cur.node.rest || len(seq) <= cur.level {
+			if parent.node.minus || len(seq) <= parent.level {
 				// end of tokens, so let's finalize the current path. If the current
 				// node is a leaf, that means we matched the sequence, so let's add it
 				// to the path list.
-				if cur.score > bestScore {
-					bestScore = cur.score
+				if parent.score > bestScore {
+					bestScore = parent.score
 					bestPath = append(bestPath[:0], path...)
 				}
 
@@ -234,35 +269,145 @@ func (this *GeneralParser) Parse(seq Sequence) (Sequence, error) {
 		// be greater than the current level.
 		var token Token
 
-		if len(seq) > cur.level {
-			token = seq[cur.level]
+		if len(seq) > parent.level {
+			token = seq[parent.level]
 		} else {
 			continue
 		}
 
-		//glog.Debugf("token=%q", token)
+		//log.Printf("Checking token=%s", token)
 
 		switch token.Type {
 		case TokenLiteral:
-			for _, n := range cur.node.tc[TokenString] {
-				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + partialMatchWeight, token.Value})
+			if len(token.Value) > 1 || (len(token.Value) == 1 && isLiteral(rune(token.Value[0]))) {
+				for _, n := range parent.node.tc[TokenString] {
+					toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + partialMatchWeight, token.Value})
+				}
 			}
 
 			// If the values match, then it's a full match, add it to the stack
-			if n, ok := cur.node.lc[token.Value]; ok {
-				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + fullMatchWeight, token.Value})
+			if n, ok := parent.node.lc[token.Value]; ok {
+				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + fullMatchWeight, token.Value})
 			}
 
 		default:
-			for _, n := range cur.node.tc[token.Type] {
-				toVisit = append(toVisit, stackParseNode{n, cur.level + 1, cur.score + fullMatchWeight, token.Value})
+			for _, n := range parent.node.tc[token.Type] {
+				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + fullMatchWeight, token.Value})
 			}
 		}
 	}
 
 	if bestScore > 0 {
+		l := len(bestPath)
+		for i := 0; i < l; i++ {
+			t := bestPath[i]
+			if t.plus || t.star {
+				var j int
+				for j = i + 1; j < l && (bestPath[j].star || bestPath[j].plus) && t.Field == bestPath[j].Field && t.Type == bestPath[j].Type; j++ {
+					t.Value += " " + bestPath[j].Value
+				}
+				bestPath[i] = t
+				bestPath = append(bestPath[:i+1], bestPath[j:]...)
+				l = len(bestPath)
+			}
+		}
 		return bestPath, nil
 	}
 
 	return nil, ErrNoMatch
+}
+
+// A field token is of the format "%field:type:meta%".
+// - field is the name of the field
+// - type is the token type of the field
+// - meta is one of the following meta characters -, +, *, where
+//   - "-" means the rest of the tokens
+//   - "+" means one or more of this token
+//   - "*" means zero or more of this token
+//
+// Formats can be
+// - %field%
+// - %type%
+// - %field:type%
+// - %field:meta%
+// - %type:meta%
+// - %field:type:meta%
+func processFieldToken(token Token) (Token, error) {
+	parts := strings.Split(token.Value[1:len(token.Value)-1], ":")
+
+	switch len(parts) {
+	case 1:
+		// If there's only 1 part, then it can only be %field% or %type%
+		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
+			token.Type = name2TokenType(parts[0])
+		} else {
+			token.Type = token.Field.TokenType()
+		}
+
+		if token.Type == TokenUnknown {
+			return token, fmt.Errorf("Invalid field token %q: unknown type", token.Value)
+		}
+
+	case 2:
+		// If there are two parts, then it can be any of the following combination
+		// - %field:type%
+		// - %field:meta%
+		// - %type:meta%
+
+		meta := false
+
+		// first part must be either field or type
+		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
+			if token.Type = name2TokenType(parts[0]); token.Type == TokenUnknown {
+				return token, fmt.Errorf("Invalid field token %q", token.Value)
+			} else {
+				meta = true
+			}
+		} else if token.Type = name2TokenType(parts[1]); token.Type == TokenUnknown {
+			meta = true
+			token.Type = token.Field.TokenType()
+		}
+
+		if meta {
+			switch parts[1] {
+			case metaPlus:
+				token.plus = true
+			case metaMinus:
+				token.minus = true
+			case metaStar:
+				token.star = true
+			default:
+				return token, fmt.Errorf("Invalid field token %q: unknown meta character", token.Value)
+			}
+		}
+
+	case 3:
+		// must be %field:type:meta%
+
+		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
+			return token, fmt.Errorf("Invalid field token %q", token.Value)
+		}
+
+		if parts[1] == "" {
+			token.Type = token.Field.TokenType()
+		} else if token.Type = name2TokenType(parts[1]); token.Type == TokenUnknown {
+			return token, fmt.Errorf("Invalid parts token %q: unknown type", token.Value)
+		}
+
+		switch parts[2] {
+		case metaPlus:
+			token.plus = true
+		case metaMinus:
+			token.minus = true
+		case metaStar:
+			token.star = true
+		default:
+			return token, fmt.Errorf("Invalid field token %q: unknown meta character", token.Value)
+		}
+
+	default:
+		return token, fmt.Errorf("Invalid parts token %q", token.Value)
+	}
+
+	return token, nil
 }

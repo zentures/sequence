@@ -67,6 +67,31 @@ func (this *Message) Tokenize() (Token, error) {
 		nss := this.skipSpace(this.Data[this.state.start:])
 		this.state.start += nss
 
+		// Let's see if this is a field token, enclosed in two '%' chars
+		// at least 2 chars left, and the first is a '%'
+		if this.state.start+1 < this.state.end && this.Data[this.state.start] == '%' {
+			var i int
+			var r rune
+
+			for i, r = range this.Data[this.state.start+1:] {
+				if !isFieldTokenChar(r) {
+					break
+				}
+			}
+
+			if r == '%' && i > 0 {
+				tok := Token{
+					Field: FieldUnknown,
+					Type:  TokenLiteral,
+					Value: this.Data[this.state.start : this.state.start+i+2],
+				}
+
+				this.state.start += i + 2
+
+				return tok, nil
+			}
+		}
+
 		l, t, err := this.scanToken(this.Data[this.state.start:])
 		if err != nil {
 			return Token{}, err
@@ -87,6 +112,8 @@ func (this *Message) Tokenize() (Token, error) {
 		this.state.tokCount++
 		this.state.prevToken = tok
 		this.state.start += l + s
+
+		//this.state.start += this.skipSpace(this.Data[this.state.start:])
 
 		return tok, nil
 	}
@@ -184,8 +211,17 @@ func (this *Message) scanToken(data string) (int, TokenType, error) {
 			if tokenLen == 0 {
 				return 1, TokenLiteral, nil
 			} else {
-				if this.state.tokenType == TokenIPv4 && this.state.dots != 3 {
-					this.state.tokenType = TokenLiteral
+				switch this.state.tokenType {
+				case TokenIPv4:
+					if this.state.dots != 3 {
+						this.state.tokenType = TokenLiteral
+					}
+
+				case TokenFloat:
+					if r == '.' && i == l-1 {
+						tokenLen--
+						this.state.tokenType = TokenInteger
+					}
 				}
 
 				return tokenLen, this.state.tokenType, nil
@@ -286,7 +322,7 @@ func (this *Message) tokenStep(i int, r rune) bool {
 
 		default:
 			//if i >= 6 && (!unicode.IsSpace(r) || (this.state.inquote && matchQuote(this.state.chquote, r))) {
-			if i >= 6 && isUrlCharacter(r) {
+			if i >= 6 && isUrlChar(r) {
 				// part of URL, keep going
 				//this.state.tokenType = TokenURI
 			} else if i == 4 && r == '/' {
@@ -573,9 +609,17 @@ func isDigit(r rune) bool {
 }
 
 // http://tools.ietf.org/html/rfc3986#section-2
-func isUrlCharacter(r rune) bool {
+func isUrlChar(r rune) bool {
 	switch r {
 	case '-', '.', '_', '~', ':', '/', '?', '#', '[', ']', '@', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', '%', '|':
+		return true
+	}
+	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9'
+}
+
+func isFieldTokenChar(r rune) bool {
+	switch r {
+	case '+', '-', '*', ':':
 		return true
 	}
 	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9'

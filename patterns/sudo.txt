@@ -1,5 +1,5 @@
 %msgtime% %apphost% %appname% : %method% ( %string% : %action% ) : auth could not identify password for [ %dstuser% ]
-%msgtime% %apphost% %appname% : %dstuser% : user not in sudoers ; tty = %string% ; pwd = %string% ; user = %srcuser% ; command = %method-10%
-%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method-10%
+%msgtime% %apphost% %appname% : %dstuser% : user not in sudoers ; tty = %string% ; pwd = %string% ; user = %srcuser% ; command = %method:-%
+%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method:-%
 %msgtime% %apphost% %appname% : %method% ( %string% : %action% ) : authentication %status% ; logname = %srcuser% uid = %integer% euid = %integer% tty = %string% ruser = %srcuser% rhost = user = %dstuser%
 %msgtime% %apphost% %appname% : %method% ( %string% : %action% ) : conversation %status%

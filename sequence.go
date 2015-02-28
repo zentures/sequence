@@ -20,9 +20,6 @@ import (
 	"strings"
 )
 
-//go:generate go run gentokens.go -- tokens.go
-//go:generate go fmt tokens.go
-
 //go:generate go run genmethods.go -- reqmethods.go
 //go:generate go fmt reqmethods.go
 
@@ -38,13 +35,42 @@ func (this Sequence) String() string {
 	var p string
 
 	for _, token := range this {
+		var c string
+
 		if token.Field != FieldUnknown {
-			p += token.Field.String() + " "
+			c = token.Field.String()
+			if token.Type != token.Field.TokenType() {
+				c += ":" + token.Type.String()
+			} else if token.plus || token.minus || token.star {
+				c += ":"
+			}
+
+			if token.plus {
+				c += ":+"
+			} else if token.minus {
+				c += ":-"
+			} else if token.star {
+				c += ":*"
+			}
+
+			c = "%" + c + "%"
 		} else if token.Type != TokenUnknown && token.Type != TokenLiteral {
-			p += token.Type.String() + " "
-		} else if token.Type == TokenLiteral {
-			p += token.Value + " "
+			c = token.Type.String()
+
+			if token.plus {
+				c += ":+"
+			} else if token.minus {
+				c += ":-"
+			} else if token.star {
+				c += ":*"
+			}
+
+			c = "%" + c + "%"
+		} else {
+			c = token.Value
 		}
+
+		p += c + " "
 	}
 
 	return strings.TrimSpace(p)
@@ -58,7 +84,7 @@ func (this Sequence) Signature() string {
 	for _, token := range this {
 		switch {
 		case token.Type != TokenUnknown && token.Type != TokenString && token.Type != TokenLiteral:
-			sig += token.Type.String()
+			sig += "%" + token.Type.String() + "%"
 
 		case token.Type == TokenLiteral && len(token.Value) == 1:
 			sig += token.Value

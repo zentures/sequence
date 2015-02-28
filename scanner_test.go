@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMatchRequestMethods(t *testing.T) {
+func TestScannerRequestMethods(t *testing.T) {
 	for _, m := range methodtests {
 		l := matchRequestMethods(m.data + " ")
 		require.Equal(t, m.l, l, m.data)
@@ -89,23 +89,19 @@ func TestScannerSignature(t *testing.T) {
 }
 
 func TestScannerScan(t *testing.T) {
-	runTestCases(t, generaltests, "general")
-}
-
-func TestScannerScanJson(t *testing.T) {
-	runTestCases(t, jsontests, "json")
+	runTestCases(t, scantests)
 }
 
 func BenchmarkScannerScanGeneral(b *testing.B) {
-	benchmarkScanner(b, generaltests[0].data, "general")
+	benchmarkScanner(b, scantests[0].data, "general")
 }
 
 func BenchmarkScannerScanJson(b *testing.B) {
-	benchmarkScanner(b, jsontests[3].data, "json")
+	benchmarkScanner(b, scantests[len(scantests)-1].data, "json")
 }
 
 func BenchmarkScannerScanJsonGeneral(b *testing.B) {
-	benchmarkScanner(b, jsontests[3].data, "general")
+	benchmarkScanner(b, scantests[len(scantests)-1].data, "general")
 }
 
 func benchmarkScanner(b *testing.B, data string, stype string) {
@@ -131,7 +127,7 @@ func benchmarkScanner(b *testing.B, data string, stype string) {
 	}
 }
 
-func runTestCases(t *testing.T, tests []testCase, stype string) {
+func runTestCases(t *testing.T, tests []testCase) {
 	scanner := NewScanner()
 
 	for _, tc := range tests {
@@ -140,7 +136,7 @@ func runTestCases(t *testing.T, tests []testCase, stype string) {
 			err error
 		)
 
-		switch stype {
+		switch tc.format {
 		case "json":
 			seq, err = scanner.ScanJson(tc.data)
 
@@ -161,8 +157,9 @@ func runTestCases(t *testing.T, tests []testCase, stype string) {
 }
 
 type testCase struct {
-	data string
-	seq  Sequence
+	format string
+	data   string
+	seq    Sequence
 }
 
 var (
@@ -281,7 +278,7 @@ var (
 		},
 		{
 			"209.36.88.3 - - [03/may/2004:01:19:07 +0000] \"get http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectrange&dr=0month&so=relevance&st=nw&ss=afr&sf=article&rc=00&clspage=0&docid=fin0000000r0jl000d00 http/1.0\" 200 27981",
-			"%ipv4%--[%time%]\"%url%\"%integer%%integer%",
+			"%ipv4%--[%time%]\"%uri%\"%integer%%integer%",
 		},
 		{
 			"4/5/2012 17:55,172.23.1.101,1101,172.23.0.10,139, generic protocol command decode,3, [1:2100538:17] gpl netbios smb ipc$ unicode share access ,tcp ttl:128 tos:0x0 id:1643 iplen:20 dgmlen:122 df,***ap*** seq: 0xcef93f32  ack: 0xc40c0bb  n: 0xfc9c  tcplen: 20,",
@@ -301,7 +298,7 @@ var (
 		},
 		{
 			"9.26.157.44 - - [16/jan/2003:21:22:59 -0500] \"get http://wssamples http/1.1\" 301 315",
-			"%ipv4%--[%time%]\"%url%\"%integer%%integer%",
+			"%ipv4%--[%time%]\"%uri%\"%integer%%integer%",
 		},
 		{
 			"2012-04-05 17:51:26     local4.info     172.23.0.1      %asa-6-302016: teardown udp connection 1315632 for inside:172.23.0.2/514 to identity:172.23.0.1/514 duration 0:09:23 bytes 7999",
@@ -321,8 +318,9 @@ var (
 		},
 	}
 
-	generaltests = []testCase{
+	scantests = []testCase{
 		{
+			"general",
 			"Jan 12 06:49:41 irc sshd[7034]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=218-161-81-238.hinet-ip.hinet.net  user=root", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "Jan 12 06:49:41"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "irc"},
@@ -364,6 +362,7 @@ var (
 		},
 
 		{
+			"general",
 			"Jan 12 06:49:42 irc sshd[7034]: Failed password for root from 218.161.81.238 port 4228 ssh2", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "Jan 12 06:49:42"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "irc"},
@@ -387,6 +386,7 @@ var (
 		//"Jan 13 17:25:59 jlz sshd[19322]: Accepted password for jlz from 108.61.8.124 port 56731 ssh2",
 		//"Jan 12 14:44:48 irc sshd[11084]: Accepted publickey for jlz from 76.21.0.16 port 36609 ssh2",
 		{
+			"general",
 			"Jan 12 06:49:56 irc last message repeated 6 times", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "Jan 12 06:49:56"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "irc"},
@@ -398,55 +398,65 @@ var (
 			},
 		},
 
-		// {
-		// 	"9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] \"GET http://WSsamples HTTP/1.1\" 301 315", Sequence{
-		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET http://WSsamples HTTP/1.1"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "301"},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "315"},
-		// 	},
-		// },
-
-		// {
-		// 	"9.26.157.45 - - [16/Jan/2003:21:22:59 -0500] \"GET /WSsamples/ HTTP/1.1\" 200 1576", Sequence{
-		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.45"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET /WSsamples/ HTTP/1.1"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "1576"},
-		// 	},
-		// },
-
-		// {
-		// 	"209.36.88.3 - - [03/May/2004:01:19:07 +0000] \"GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0\" 200 27981", Sequence{
-		// 		Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
-		// 		Token{Type: TokenTime, Field: FieldUnknown, Value: "03/May/2004:01:19:07 +0000"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
-		// 		Token{Type: TokenInteger, Field: FieldUnknown, Value: "27981"},
-		// 	},
-		// },
+		{
+			"general",
+			`9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] "GET http://WSsamples HTTP/1.1" 301 315`, Sequence{
+				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+				Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
+				Token{Type: TokenURI, Field: FieldUnknown, Value: "http://WSsamples"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.1"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "301"},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "315"},
+			},
+		},
 
 		{
+			"general",
+			`9.26.157.45 - - [16/Jan/2003:21:22:59 -0500] "GET /WSsamples/ HTTP/1.1" 200 1576`, Sequence{
+				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.45"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+				Token{Type: TokenTime, Field: FieldUnknown, Value: "16/Jan/2003:21:22:59 -0500"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "/WSsamples/"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.1"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "1576"},
+			},
+		},
+
+		{
+			"general",
+			`209.36.88.3 - - [03/May/2004:01:19:07 +0000] "GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0" 200 27981`, Sequence{
+				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "["},
+				Token{Type: TokenTime, Field: FieldUnknown, Value: "03/May/2004:01:19:07 +0000"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "]"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "GET"},
+				Token{Type: TokenURI, Field: FieldUnknown, Value: "http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "HTTP/1.0"},
+				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "\""},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "200"},
+				Token{Type: TokenInteger, Field: FieldUnknown, Value: "27981"},
+			},
+		},
+
+		{
+			"general",
 			"4/5/2012 17:55,172.23.1.101,1101,172.23.0.10,139, Generic Protocol Command Decode,3, [1:2100538:17] GPL NETBIOS SMB IPC$ unicode share access ,TCP TTL:128 TOS:0x0 ID:1643 IpLen:20 DgmLen:122 DF,***AP*** Seq: 0xCEF93F32  Ack: 0xC40C0BB  n: 0xFC9C  TcpLen: 20,", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "4/5/2012 17:55"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: ","},
@@ -516,6 +526,7 @@ var (
 		},
 
 		{
+			"general",
 			"2012-04-05 17:51:26     Local4.Info     172.23.0.1      %ASA-6-302016: Teardown UDP connection 1315632 for inside:172.23.0.2/514 to identity:172.23.0.1/514 duration 0:09:23 bytes 7999", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "2012-04-05 17:51:26"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "Local4.Info"},
@@ -546,6 +557,7 @@ var (
 		},
 
 		{
+			"general",
 			"2012-04-05 17:54:47     Local4.Info     172.23.0.1      %ASA-6-302015: Built outbound UDP connection 1315679 for outside:193.0.14.129/53 (193.0.14.129/53) to inside:172.23.0.10/64048 (10.32.0.1/52130)", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "2012-04-05 17:54:47"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "Local4.Info"},
@@ -583,7 +595,8 @@ var (
 		},
 
 		{
-			"id=firewall time=\"2005-03-18 14:01:43\" fw=TOPSEC priv=4 recorder=kernel type=conn policy=504 proto=TCP rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82", Sequence{
+			"general",
+			`id=firewall time="2005-03-18 14:01:43" fw=TOPSEC priv=4 recorder=kernel type=conn policy=504 proto=TCP rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82`, Sequence{
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "id"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "="},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "firewall"},
@@ -635,6 +648,7 @@ var (
 		},
 
 		{
+			"general",
 			"mar 01 09:42:03.875 pffbisvr smtp[2424]: 334 warning: denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30]", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "mar 01 09:42:03.875"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "pffbisvr"},
@@ -661,6 +675,7 @@ var (
 		},
 
 		{
+			"general",
 			"may  2 19:00:02 dlfssrv sendmail[18980]: taa18980: from user daemon: size is 596, class is 0, priority is 30596, and nrcpts=1, message id is <200305021400.taa18980@dlfssrv.in.ibm.com>, relay=daemon@localhost", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "may  2 19:00:02"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "dlfssrv"},
@@ -706,6 +721,7 @@ var (
 		},
 
 		{
+			"general",
 			"mar 01 09:45:02.596 pffbisvr smtp[2424]: 121 statistics: duration=181.14 user=<egreetings@vishwak.com> id=zduqd sent=1440 rcvd=356 srcif=d45f49a2-b30 src=209.235.210.30/61663 cldst=192.216.179.206/25 svsrc=172.17.74.195/8423 dstif=fd3c875c-064 dst=172.17.74.52/25 op=\"to 1 recips\" arg=<vishwakstg1ojte15fo000033b4@vishwakstg1.msn.vishwak.net> result=\"250 m2004030109385301402 message accepted for delivery\" proto=smtp rule=131 (denied access to command 'ehlo vishwakstg1.msn.vishwak.net' from [209.235.210.30])", Sequence{
 				Token{Type: TokenTime, Field: FieldUnknown, Value: "mar 01 09:45:02.596"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "pffbisvr"},
@@ -798,6 +814,7 @@ var (
 		},
 
 		{
+			"general",
 			"2015-02-11 11:04:40 H=(amoricanexpress.com) [64.20.195.132]:10246 F=<fxC4480@amoricanexpress.com> rejected RCPT <SCRUBBED@SCRUBBED.com>: Sender verify failed", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-02-11 11:04:40", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "H", isKey: false, isValue: false},
@@ -828,6 +845,7 @@ var (
 		},
 
 		{
+			"general",
 			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection rate 1/60s for (smtp:5.5.5.5) at Jan 31 21:39:37", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
@@ -854,6 +872,7 @@ var (
 		},
 
 		{
+			"general",
 			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max connection count 1 for (smtp:5.5.5.5) at Jan 31 21:39:37", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
@@ -880,6 +899,7 @@ var (
 		},
 
 		{
+			"general",
 			"Jan 31 21:42:59 mail postfix/anvil[14606]: statistics: max cache size 1 at Jan 31 21:39:37", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "Jan 31 21:42:59", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "mail", isKey: false, isValue: false},
@@ -901,6 +921,7 @@ var (
 
 		// relates to #2
 		{
+			"general",
 			"Feb 06 13:37:00 box sshd[4388]: Accepted publickey for cryptix from dead:beef:1234:5678:223:32ff:feb1:2e50 port 58251 ssh2: RSA de:ad:be:ef:74:a6:bb:45:45:52:71:de:b2:12:34:56", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "Feb 06 13:37:00", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "box", isKey: false, isValue: false},
@@ -926,6 +947,7 @@ var (
 
 		// relates to #6
 		{
+			"general",
 			"2015-01-21 21:41:27 4515 [Note] - '::' resolves to '::';", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-01-21 21:41:27", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenInteger, Value: "4515", isKey: false, isValue: false},
@@ -947,6 +969,7 @@ var (
 
 		// relates to #6,
 		{
+			"general",
 			"2015-01-21 21:41:27 4515 [Note] Server socket created on IP: '::'.", Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "2015-01-21 21:41:27", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenInteger, Value: "4515", isKey: false, isValue: false},
@@ -966,33 +989,8 @@ var (
 			},
 		},
 
-		// {
-		// 	"%msgtime% %apphost% %appname% : %srcuser% : tty = %string% ; pwd = %string% ; user = %dstuser% ; command = %method/10%", Sequence{
-		// 		Token{Type: TokenTime, Field: FieldMsgTime, Value: "%msgtime%"},
-		// 		Token{Type: TokenLiteral, Field: FieldAppHost, Value: "%apphost%"},
-		// 		Token{Type: TokenLiteral, Field: FieldAppName, Value: "%appname%"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: ":"},
-		// 		Token{Type: TokenLiteral, Field: FieldSrcUser, Value: "%srcuser%"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: ":"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "tty"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "="},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "%string%"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: ";"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "pwd"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "="},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "%string%"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: ";"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "user"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "="},
-		// 		Token{Type: TokenLiteral, Field: FieldDstUser, Value: "%dstuser%"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: ";"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "command"},
-		// 		Token{Type: TokenLiteral, Field: FieldUnknown, Value: "="},
-		// 		Token{Type: TokenLiteral, Field: FieldMethod, Value: "%method/10%"},
-		// 	},
-		// },
-
 		{
+			"general",
 			"9.26.157.44 - - [16/Jan/2003:21:22:59 -0500] \"GET http://WSsamples HTTP/1.1\" 301 315", Sequence{
 				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "9.26.157.44"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
@@ -1011,6 +1009,7 @@ var (
 		},
 
 		{
+			"general",
 			"209.36.88.3 - - [03/May/2004:01:19:07 +0000] \"GET http://npkclzicp.xihudohtd.ngm.au/abramson/eiyscmeqix.ac;jsessionid=b0l0v000u0?sid=00000000&sy=afr&kw=goldman&pb=fin&dt=selectRange&dr=0month&so=relevance&st=nw&ss=AFR&sf=article&rc=00&clsPage=0&docID=FIN0000000R0JL000D00 HTTP/1.0\" 200 27981", Sequence{
 				Token{Type: TokenIPv4, Field: FieldUnknown, Value: "209.36.88.3"},
 				Token{Type: TokenLiteral, Field: FieldUnknown, Value: "-"},
@@ -1029,6 +1028,7 @@ var (
 		},
 
 		{
+			"general",
 			`175.185.9.6 - - [12/Jul/2013:15:56:54 +0000] "GET /organizations/exampleorg/data/firewall/nova_api HTTP/1.1" 200 "0.850" 452 "-" "Chef Client/0.10.2 (ruby-1.8.7-p302; ohai-0.6.4; x86_64-linux; +http://opscode.com)" "127.0.0.1:9460" "200" "0.849" "0.10.2" "version=1.0" "some_node.example.com" "2013-07-12T15:56:40Z" "2jmj7l5rSw0yVb/vlWAYkK/YBwk=" 985`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "175.185.9.6", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
@@ -1081,6 +1081,7 @@ var (
 		},
 
 		{
+			"general",
 			`209.36.213.112 - - [03/May/2004:01:00:04 +0000] "GET http://www.toxzyyphvc.com/xray/peterson.asp?ProdID=00000&LastUpdate=00000000&Stocks=00:00000|00:000|00:0000|00:000|00:0000|00:0000|00:0000|00:0000|00:000|00:00000|00:000|00:000|00:000|00:0000|00:0000|00:000|00:000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000|00:00000|00:0000|00:0000|00:0000|00:0000|00:0000|00:0000&UpdType=0 HTTP/1.0" 200 281`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "209.36.213.112", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "-", isKey: false, isValue: false},
@@ -1099,6 +1100,7 @@ var (
 		},
 
 		{
+			"general",
 			`2014-02-15T23:39:43.945958Z my-test-loadbalancer 192.168.131.39:2817 10.0.0.1:80 0.000073 0.001048 0.000057 200 200 0 29 "GET http://www.example.com:80/HTTP/1.1"`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenTime, Value: "2014-02-15T23:39:43.945958Z", isKey: false, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "my-test-loadbalancer", isKey: false, isValue: false},
@@ -1122,6 +1124,28 @@ var (
 			},
 		},
 
+		// relates to #3
+		{
+			"general",
+			"Feb 06 15:56:09 higgs sshd[902]: Server listening on 0.0.0.0 port 22.",
+			Sequence{
+				Token{Field: FieldUnknown, Type: TokenTime, Value: "Feb 06 15:56:09", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "higgs", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "sshd", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "[", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "902", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "]", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ":", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Server", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "listening", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "on", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenIPv4, Value: "0.0.0.0", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "port", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenInteger, Value: "22", isKey: false, isValue: false},
+				Token{Field: FieldUnknown, Type: TokenLiteral, Value: ".", isKey: false, isValue: false},
+			},
+		},
+
 		// {
 		// 	"2010-03-12	23:51:20	SEA4	192.0.2.147	connect	2014	OK	bfd8a98bee0840d9b871b7f6ade9908f	rtmp://shqshne4jdp4b6.cloudfront.net/cfx/st​	key=value	http://player.longtailvideo.com/player.swf	http://www.longtailvideo.com/support/jw-player-setup-wizard?example=204	LNX%2010,0,32,18	-	-	-	-", Sequence{},
 		// },
@@ -1129,10 +1153,9 @@ var (
 		// {
 		// 	"Feb  8 23:49:58 mail postfix/pipe[85979]: B9E532E0B: to=<userB@company.office>, orig_to=<userB@company.eu>, relay=dovecot, delay=0.19, delays=0.16/0/0/0.03, dsn=2.0.0, status=sent (delivered via dovecot service)", Sequence{},
 		// },
-	}
 
-	jsontests = []testCase{
 		{
+			"json",
 			`{"log-level":"INFO","message":"request/response","uri":"/ping","request":{"ssl-client-cert":null,"remote-addr":"10.11.22.33","headers":{"host":"itsman.staging.quinpress.com"},"server-port":3030,"content-length":null,"content-type":null,"character-encoding":null,"uri":"/ping","server-name":"xxxx.staging.strace.io","query-string":null,"body":"org.eclipse.jetty.server.HttpInput@51383a10","scheme":"http","request-method":"get"},"response":{"status":200,"body":"pong","headers":{"Access-Control-Allow-Origin":"*","content-type":"text/plain"}},"start-ts":1422427444553,"end-ts":1422427444554,"elapsed":1}`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "log-level", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
@@ -1207,6 +1230,7 @@ var (
 		},
 
 		{
+			"json",
 			`{"EventTime":"2014-08-16T12:45:03-0400","URI":"myuri","uri_payload":{"value":[{"open":"2014-08-16T13:00:00.000+0000","close":"2014-08-16T23:00:00.000+0000","isOpen":true,"date":"2014-08-16"}],"Count":1}}`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "EventTime", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
@@ -1235,6 +1259,7 @@ var (
 		//`{"syslogTime":"2014-04-10T17:17:13.696190-04:00","originName":"nl-fldi-00374.wdw.disney.com","message":{"X-Correlation-ID":"35b39f06-ca3e-4cc4-b02b-fd7506ca0df","level":"AUDIT","message":"Call Trace:\nSeverity: AUDIT\nX-Log-ID: b263b047-f807-49b4-b23e-f9e24cca4fe5\nX-Correlation-ID: 35b39f06-ca3e-4cc4-b02b-fd7506ca0df6\nX-System-ID: SF\nX-CAST-ID: null\nX-Guest-ID: null\nX-CIP: null\nX-Origin-System-ID: NGE-GXP.LOAD2-VALID\nTimestamp: Thu Apr 10 17:17:13 EDT 2014\nEndpoint: http:\/\/nge-load2.wdw.disney.com:8080\/assembly\/guest\/027BEF2F38EB424487092304E0532BA1\/identifiers\nHeaders: {Accept=[application\/json], apim-uuid=[35b39f06-ca3e-4cc4-b02b-fd7506ca0df6], Authorization=[BEARER _wRHo7wU6auBVDyYtOvPCw], client-ip=[10.52.27.19], Content-Type=[null], host=[nge-load2.wdw.disney.com:8080], lg_header=[Interaction=STyp79nmrokvRi5NRQFEDzIK;Locus=1dqc\/PEB1A2KXW9Je6ENpg==;Flow=cO_n26sYiatu6P5LRQH2DjIK;Chain=SDyp79nmrokvRi5NRQFEDzIK;UpstreamOpID=tfYAwD7njpLD4nyIgA9gbw==;Path=drlsVAS58dNUoEnn\/v0lwQ==;name=E_5400-4DCkv3.3sjnOcTwB-3D2123A0-INITIATED;CPTime=1397164633684;name=U_5400-4DCkv3.3sjnOcTwB-3D2123A0-COMPLETED;CPTime=1397164633684;CallerAddress=nl-fldi-01200;CalleeAddress=nge-load2.wdw.disney.com;], user-agent=[Jakarta Commons-HttpClient\/3.1], via=[http\/1.1 APIMClusterDISCPerfPROD-R2.7.1[FE800000000000000217A4FFFE770CB0] (ApacheTrafficServer\/3.2.0)], x-correlation-id=[35b39f06-ca3e-4cc4-b02b-fd7506ca0df6], x-expected-ttl=[5], x-ext-base-url=[http:\/\/nge-load2.wdw.disney.com:8080\/assembly], x-forwarded-for=[10.52.27.19], x-origin-system-id=[NGE-GXP.LOAD2-VALID]}\nHTTP Method: GET\nHTTP Request Parameters: \n\n","time":"2014-04-10T21:17:13.702Z","start_time":"2014-04-03T14:59:11.851Z","logger":"com.wdpr.nge.common.logging.appender.slf4j.SLF4JLogAppender","grid":"Dev","application":"sf-asm","appliance":"load2","thread":"tomcat-http--4015","file":"?","line":"?"}}`, Sequence{},
 
 		{
+			"json",
 			`{"eventVersion": "1.0", "userIdentity": {"type": "IAMUser", "principalId": "EX_PRINCIPAL_ID", "arn": "arn:aws:iam::123456789012:user/Alice", "accessKeyId": "EXAMPLE_KEY_ID", "accountId": "123456789012", "userName": "Alice"}, "eventTime": "2014-03-06T21:22:54Z", "eventSource": "ec2.amazonaws.com", "eventName": "StartInstances", "awsRegion": "us-west-2", "sourceIPAddress": "205.251.233.176", "userAgent": "ec2-api-tools 1.6.12.2", "requestParameters": {"instancesSet": {"items": [{"instanceId": "i-ebeaf9e2"}] } }, "responseElements": {"instancesSet": {"items": [{"instanceId": "i-ebeaf9e2", "currentState": {"code": 0, "name": "pending"}, "previousState": {"code": 80, "name": "stopped"} }] } } }`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventVersion", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
@@ -1297,6 +1322,7 @@ var (
 		},
 
 		{
+			"json",
 			`{"eventVersion": "1.01", "userIdentity": {"type": "IAMUser", "principalId": "XXXXXXXXXXXXXXXXXXXX", "arn": "arn:aws:iam::012345678901:user/rhendriks", "accountId": "012345678901", "accessKeyId": "XXXXXXXXXXXXXXXXXXXX", "userName": "rhendriks"}, "eventTime": "2014-01-31T12:00:00Z", "eventSource": "ec2.amazonaws.com", "eventName": "DescribeInstances", "awsRegion": "us-east-1", "sourceIPAddress": "11.111.111.111", "userAgent": "aws-sdk-ruby/1.33.0 ruby/1.9.3 x86_64-linux", "requestParameters": {"instancesSet": {"items": [{"instanceId": "i-01234567"}] }, "filterSet": {} }, "responseElements": null, "requestID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa", "eventID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaaa"}`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "eventVersion", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
@@ -1353,6 +1379,7 @@ var (
 		},
 
 		{
+			"json",
 			`{"reference":"","roundTripDuration":206}`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "roundTripDuration", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},
@@ -1361,6 +1388,7 @@ var (
 		},
 
 		{
+			"json",
 			`{"Version": "2012-10-17", "Statement": [{"Sid": "Put bucket policy needed for audit logging", "Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::193672423079:user/logs"}, "Action": "s3:PutObject", "Resource": "arn:aws:s3:::AuditLogs/*"}, {"Sid": "Get bucket policy needed for audit logging ", "Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::193672423079:user/logs"}, "Action": "s3:GetBucketAcl", "Resource": "arn:aws:s3:::AuditLogs"} ] }`, Sequence{
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "Version", isKey: true, isValue: false},
 				Token{Field: FieldUnknown, Type: TokenLiteral, Value: "=", isKey: false, isValue: false},

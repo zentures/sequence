@@ -718,7 +718,7 @@ func markSequenceKV(seq Sequence) Sequence {
 
 func analyzeSequence(seq Sequence) Sequence {
 	l := len(seq)
-	var fexists [FieldTypesCount]bool
+	var fexists = make([]bool, FieldTypesCount)
 
 	defer func() {
 		// Step 7: try to see if we can find any srcport and dstport fields
@@ -731,22 +731,22 @@ func analyzeSequence(seq Sequence) Sequence {
 				seq[i+2].Type == TokenInteger {
 
 				switch tok.Field {
-				case FieldSrcIPv4:
+				case FieldSrcIP:
 					seq[i+2].Field = FieldSrcPort
 					seq[i+2].Type = seq[i+2].Field.TokenType()
 					fexists[seq[i+2].Field] = true
 
-				case FieldDstIPv4:
+				case FieldDstIP:
 					seq[i+2].Field = FieldDstPort
 					seq[i+2].Type = seq[i+2].Field.TokenType()
 					fexists[seq[i+2].Field] = true
 
-				case FieldSrcIPv4NAT:
+				case FieldSrcIPNAT:
 					seq[i+2].Field = FieldSrcPortNAT
 					seq[i+2].Type = seq[i+2].Field.TokenType()
 					fexists[seq[i+2].Field] = true
 
-				case FieldDstIPv4NAT:
+				case FieldDstIPNAT:
 					seq[i+2].Field = FieldDstPortNAT
 					seq[i+2].Type = seq[i+2].Field.TokenType()
 					fexists[seq[i+2].Field] = true
@@ -763,7 +763,7 @@ func analyzeSequence(seq Sequence) Sequence {
 	seq = markSequenceKV(seq)
 
 	for i, tok := range seq {
-		if _, ok := Keymaps.Prekeys[tok.Value]; ok {
+		if _, ok := keymaps.prekeys[tok.Value]; ok {
 			seq[i].isKey = true
 		}
 	}
@@ -785,7 +785,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		}
 	}
 
-	//glog.Debugf("2. %s", seq)
+	//glog.Debugf("2. %s", seq.PrintTokens())
 
 	// Step 3: try to recognize syslog headers (RFC5424 and RFC3164)
 	// RFC5424
@@ -810,7 +810,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		// app ip or hostname
 		switch seq[2].Type {
 		case TokenIPv4:
-			seq[2].Field = FieldAppIPv4
+			seq[2].Field = FieldAppIP
 
 		case token__host__, TokenLiteral, TokenString:
 			seq[2].Field = FieldAppHost
@@ -847,7 +847,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIPv4
+			seq[1].Field = FieldAppIP
 
 		case token__host__, TokenLiteral, TokenString:
 			seq[1].Field = FieldAppHost
@@ -877,7 +877,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIPv4
+			seq[1].Field = FieldAppIP
 
 		case token__host__, TokenLiteral, TokenString:
 			seq[1].Field = FieldAppHost
@@ -908,7 +908,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIPv4
+			seq[1].Field = FieldAppIP
 
 		case token__host__, TokenLiteral, TokenString:
 			seq[1].Field = FieldAppHost
@@ -918,7 +918,7 @@ func analyzeSequence(seq Sequence) Sequence {
 		fexists[seq[1].Field] = true
 	}
 
-	//glog.Debugf("3. %s", seq)
+	// glog.Debugf("3. %s", seq)
 
 	// Step 5: identify the likely fields by their prekeys (literals that usually
 	// exist before non-literals). All values must be within 2 tokens away, not
@@ -934,7 +934,7 @@ LOOP:
 
 		//glog.Debugf("1. checking tok=%q", tok)
 
-		if fields, ok := Keymaps.Prekeys[tok.Value]; ok {
+		if fields, ok := keymaps.prekeys[tok.Value]; ok {
 
 			// This token is a matching prekey
 
@@ -1041,7 +1041,7 @@ LOOP:
 	for i, tok := range seq {
 		if !tok.isKey && !tok.isValue && (tok.Type == TokenLiteral || tok.Type == TokenString) && tok.Field == FieldUnknown {
 			pw := porter2.Stem(tok.Value)
-			if f, ok := Keymaps.Keywords[pw]; ok {
+			if f, ok := keymaps.keywords[pw]; ok {
 				if !fexists[f] {
 					seq[i].Field = f
 					seq[i].Type = f.TokenType()
@@ -1082,14 +1082,14 @@ LOOP:
 				}
 
 			case TokenIPv4:
-				if !fexists[FieldSrcIPv4] {
-					seq[i].Field = FieldSrcIPv4
+				if !fexists[FieldSrcIP] {
+					seq[i].Field = FieldSrcIP
 					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldSrcIPv4] = true
-				} else if !fexists[FieldDstIPv4] {
-					seq[i].Field = FieldDstIPv4
+					fexists[FieldSrcIP] = true
+				} else if !fexists[FieldDstIP] {
+					seq[i].Field = FieldDstIP
 					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldDstIPv4] = true
+					fexists[FieldDstIP] = true
 				}
 
 			case token__host__:

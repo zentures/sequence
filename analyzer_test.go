@@ -27,18 +27,15 @@ var (
 	}{
 		{
 			"Jan 12 06:49:42 irc sshd[7034]: Failed password for root from 218.161.81.238 port 4228 ssh2",
-			//"%time% %string% sshd [ %integer% ] : %string% %string% for %string% from %ipv4% port %integer% ssh2",
-			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2",
+			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcip% port %srcport% ssh2",
 		},
 		{
 			"Jan 12 06:49:42 irc sshd[7034]: Accepted password for root from 218.161.81.238 port 4228 ssh2",
-			//"%time% %string% sshd [ %integer% ] : %string% %string% for %string% from %ipv4% port %integer% ssh2",
-			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2",
+			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcip% port %srcport% ssh2",
 		},
 		{
 			"Jan 12 14:44:48 jlz sshd[11084]: Accepted publickey for jlz from 76.21.0.16 port 36609 ssh2",
-			//"%time% %string% sshd [ %integer% ] : %string% %string% for %string% from %ipv4% port %integer% ssh2",
-			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2",
+			"%msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcip% port %srcport% ssh2",
 		},
 		{
 			"Jan 12 08:03:01 buster-dev sshd[24877]: pam_unix(sshd:session): session opened for user jolata by (uid=0)",
@@ -55,13 +52,11 @@ var (
 	}{
 		{
 			"id=firewall time=\"2005-03-18 14:01:46\" fw=TOPSEC priv=6 recorder=kernel type=conn policy=414 proto=TCP rule=accept src=61.167.71.244 sport=35223 dst=210.82.119.211 dport=25 duration=27 inpkt=37 outpkt=39 sent=1770 rcvd=20926 smac=00:04:c1:8b:d8:82 dmac=00:0b:5f:b2:1d:80",
-			//"id = %string% time = \" %time% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %string% rule = %string% src = %ipv4% sport = %integer% dst = %ipv4% dport = %integer% duration = %integer% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %mac% dmac = %mac%",
-			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcipv4% sport = %srcport% dst = %dstipv4% dport = %dstport% duration = %duration% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %srcmac% dmac = %dstmac%",
+			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcip% sport = %srcport% dst = %dstip% dport = %dstport% duration = %duration% inpkt = %integer% outpkt = %integer% sent = %integer% rcvd = %integer% smac = %srcmac% dmac = %dstmac%",
 		},
 		{
 			"id=firewall time=\"2005-03-18 14:01:43\" fw=TOPSEC priv=4 recorder=kernel type=conn policy=504 proto=TCP rule=deny src=210.82.121.91 sport=4958 dst=61.229.37.85 dport=23124 smac=00:0b:5f:b2:1d:80 dmac=00:04:c1:8b:d8:82",
-			//"id = %string% time = \" %time% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %string% rule = %string% src = %ipv4% sport = %integer% dst = %ipv4% dport = %integer% smac = %mac% dmac = %mac%",
-			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcipv4% sport = %srcport% dst = %dstipv4% dport = %dstport% smac = %srcmac% dmac = %dstmac%",
+			"id = %string% time = \" %msgtime% \" fw = %string% priv = %integer% recorder = %string% type = %string% policy = %integer% proto = %protocol% rule = %string% src = %srcip% sport = %srcport% dst = %dstip% dport = %dstport% smac = %srcmac% dmac = %dstmac%",
 		},
 	}
 

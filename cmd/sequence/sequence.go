@@ -273,6 +273,7 @@ var (
 	}
 
 	inmsg      string
+	cfgfile    string
 	infile     string
 	outfile    string
 	patfile    string
@@ -296,6 +297,7 @@ func init() {
 	scanCmd.Run = scan
 
 	analyzeCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
+	analyzeCmd.Flags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
 	analyzeCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required")
 	analyzeCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
 	analyzeCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used, optional")
@@ -303,6 +305,7 @@ func init() {
 	analyzeCmd.Run = analyze
 
 	parseCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
+	parseCmd.Flags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
 	parseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
 	parseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, required")
 	parseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
@@ -375,6 +378,8 @@ func scan(cmd *cobra.Command, args []string) {
 }
 
 func analyze(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}
@@ -471,6 +476,8 @@ func analyze(cmd *cobra.Command, args []string) {
 }
 
 func parse(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}
@@ -575,6 +582,8 @@ func benchScan(cmd *cobra.Command, args []string) {
 }
 
 func benchParse(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}
@@ -753,6 +762,12 @@ func openOutputFile(fname string) *os.File {
 	}
 
 	return ofile
+}
+
+func readConfig() {
+	if err := sequence.ReadConfig(cfgfile); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
