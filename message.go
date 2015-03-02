@@ -619,7 +619,7 @@ func isUrlChar(r rune) bool {
 
 func isFieldTokenChar(r rune) bool {
 	switch r {
-	case '+', '-', '*', ':':
+	case '+', '-', '*', ':', '_':
 		return true
 	}
 	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9'

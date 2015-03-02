@@ -51,7 +51,7 @@ const (
 	TokenLiteral                    // Token is a fixed literal
 	TokenTime                       // Token is a timestamp, in the format listed in TimeFormats
 	TokenIPv4                       // Token is an IPv4 address, in the form of a.b.c.d
-	TokenIPv6                       // Token is an IPv6 address, not currently supported
+	TokenIPv6                       // Token is an IPv6 address
 	TokenInteger                    // Token is an integer number
 	TokenFloat                      // Token is a floating point number
 	TokenURI                        // Token is an URL, in the form of http://... or https://...

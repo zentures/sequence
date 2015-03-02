@@ -372,6 +372,8 @@ func profile() {
 }
 
 func scan(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	scanner := sequence.NewScanner()
 	seq := scanMessage(scanner, inmsg)
 	fmt.Println(seq.PrintTokens())

@@ -40,9 +40,21 @@ var (
 )
 
 func ReadConfig(file string) error {
+	var configInfo struct {
+		TimeFormats []string
+		Fields      []string
+
+		Analyzer struct {
+			Prekeys  map[string][]string
+			Keywords map[string][]string
+		}
+	}
+
 	if _, err := toml.DecodeFile(file, &configInfo); err != nil {
 		return err
 	}
+
+	timeFsmRoot = buildTimeFSM(configInfo.TimeFormats)
 
 	config.fieldIDs = make(map[string]FieldType, 30)
 	config.fieldNames = config.fieldNames[:0]
@@ -57,7 +69,7 @@ func ReadConfig(file string) error {
 	config.fieldTypes = append(config.fieldTypes, TokenUnknown)
 	ftype++
 
-	for _, f := range configInfo.Parser.Fields {
+	for _, f := range configInfo.Fields {
 		fs := strings.Split(f, ":")
 		if len(fs) != 2 || fs[1] == "" {
 			return fmt.Errorf("Error parsing field %q: missing token type", f)
@@ -100,21 +112,6 @@ func ReadConfig(file string) error {
 	allTypesCount = TokenTypesCount + FieldTypesCount
 
 	return nil
-}
-
-var configInfo struct {
-	Parser   parserInfo
-	Analyzer analyzerInfo
-}
-
-type parserInfo struct {
-	Fields []string
-	ids    map[string]int
-}
-
-type analyzerInfo struct {
-	Prekeys  map[string][]string
-	Keywords map[string][]string
 }
 
 func predefineAnalyzerFields(f string, t FieldType) {
