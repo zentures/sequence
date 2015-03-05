@@ -1,3 +1,5 @@
+version = "0.1"
+
 timeFormats = [
 	"Mon Jan _2 15:04:05 2006",
 	"Mon Jan _2 15:04:05 MST 2006",

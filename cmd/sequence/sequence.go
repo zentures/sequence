@@ -12,210 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The `sequence` command implements a _sequential semantic log parser_.
+// Sequence is a high performance sequential log scanner, analyzer and parser.
+// It sequentially goes through a log message, parses out the meaningful parts,
+// without the use regular expressions. It can parse over 100,000 messages per
+// second without the need to separate parsing rules by log source type.
 //
-// It is _sequential_ because it goes through a log message sequentially and does not
-// use regular expressions. It is _semantic_ because it tries to extract meaningful
-// information out of the log messages and give them semantic indicators, e.g.,
-// src IPv4 or dst IPv4. It is a _parser_ because it will take a message and parses
-// out the meaningful parts.
-//
-//    Usage:
-//      sequence [command]
-//
-//    Available Commands:
-//      scan                      scan will tokenize a log file or message and output a list of tokens
-//      analyze                   analyze will analyze a log file and output a list of patterns that will match all the log messages
-//      parse                     parse will parse a log file and output a list of parsed tokens for each of the log messages
-//      bench                     benchmark scanning or parsing, no output is provided
-//		  scan                    benchmark the scanning of a log file, no output is provided
-// 		  parse                   benchmark the parsing of a log file, no output is provided
-//      help [command]            Help about any command
-//
-// ### Scan
-//
-//   Usage:
-//     sequence scan [flags]
-//
-//    Available Flags:
-//     -h, --help=false: help for scan
-//     -m, --msg="": message to tokenize
-//
-// Example
-//
-//   $ ./sequence scan -m "jan 14 10:15:56 testserver sudo:    gonner : tty=pts/3 ; pwd=/home/gonner ; user=root ; command=/bin/su - ustream"
-//   #   0: { Field="%funknown%", Type="%ts%", Value="jan 14 10:15:56" }
-//   #   1: { Field="%funknown%", Type="%literal%", Value="testserver" }
-//   #   2: { Field="%funknown%", Type="%literal%", Value="sudo" }
-//   #   3: { Field="%funknown%", Type="%literal%", Value=":" }
-//   #   4: { Field="%funknown%", Type="%literal%", Value="gonner" }
-//   #   5: { Field="%funknown%", Type="%literal%", Value=":" }
-//   #   6: { Field="%funknown%", Type="%literal%", Value="tty" }
-//   #   7: { Field="%funknown%", Type="%literal%", Value="=" }
-//   #   8: { Field="%funknown%", Type="%string%", Value="pts/3" }
-//   #   9: { Field="%funknown%", Type="%literal%", Value=";" }
-//   #  10: { Field="%funknown%", Type="%literal%", Value="pwd" }
-//   #  11: { Field="%funknown%", Type="%literal%", Value="=" }
-//   #  12: { Field="%funknown%", Type="%string%", Value="/home/gonner" }
-//   #  13: { Field="%funknown%", Type="%literal%", Value=";" }
-//   #  14: { Field="%funknown%", Type="%literal%", Value="user" }
-//   #  15: { Field="%funknown%", Type="%literal%", Value="=" }
-//   #  16: { Field="%funknown%", Type="%string%", Value="root" }
-//   #  17: { Field="%funknown%", Type="%literal%", Value=";" }
-//   #  18: { Field="%funknown%", Type="%literal%", Value="command" }
-//   #  19: { Field="%funknown%", Type="%literal%", Value="=" }
-//   #  20: { Field="%funknown%", Type="%string%", Value="/bin/su" }
-//   #  21: { Field="%funknown%", Type="%literal%", Value="-" }
-//   #  22: { Field="%funknown%", Type="%literal%", Value="ustream" }
-//
-// ### Analyze
-//
-// ```
-//   Usage:
-//     sequence analyze [flags]
-//
-//    Available Flags:
-//     -h, --help=false: help for analyze
-//     -i, --infile="": input file, required
-//     -o, --outfile="": output file, if empty, to stdout
-//     -d, --patdir="": pattern directory,, all files in directory will be used, optional
-//     -p, --patfile="": initial pattern file, optional
-// ```
-//
-// The following command analyzes a set of sshd log messages, and output the
-// patterns to the sshd.pat file. In this example, `sequence` analyzed over 200K
-// messages and found 45 unique patterns. Notice we are not supplying an existing
-// pattern file, so it treats all the patters as new.
-//
-// ```
-//   $ ./sequence analyze -i ../../data/sshd.all  -o sshd.pat
-//   Analyzed 212897 messages, found 45 unique patterns, 45 are new.
-// ```
-//
-// And the output file has entries such as:
-//
-//   %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% from %srcipv4% port %srcport% ssh2
-//   # Jan 15 19:39:26 irc sshd[7778]: Accepted password for jlz from 108.61.8.124 port 57630 ssh2
-//
-// The Analyzer tries to guess to the best of its ability on the type of tokens it
-// encounters. It can probably guess 50-60% but can often guess wrong. For example
-//
-//   %msgtime% %apphost% %appname% [ %sessionid% ] : %status% %method% for %srcuser% %string% %action% from %srcipv4% port %srcport% ssh2
-//   # Jan 15 18:25:24 jlz sshd[3721]: Failed password for invalid user building from 188.65.16.110 port 58375 ssh2
-//
-// In the above message, the token `invalid` is mistakenly guesssed as `%srcuser%`
-// because it follows the keyword `for`, as defined in keymaps.go.
-//
-// However, the analyzer should help reduce the amount of effort in writing rules.
-// Also, once some of the patterns are established, there should be fewer new ones
-// you need to write. For example, in the following command, we added an existing
-// pattern file to the mix, which has a set of existing rules. Notice now there are
-// only 35 unique patterns, and we were able to parse all of the log messages (no
-// new patterns). There are fewer patterns because some of the patterns were combined.
-//
-//   $ ./sequence analyze -d ../../patterns -i ../../data/sshd.all  -o sshd.pat
-//   Analyzed 212897 messages, found 35 unique patterns, 0 are new.
-//
-// ### Parse
-//
-//   Usage:
-//     sequence parse [flags]
-//
-//    Available Flags:
-//     -h, --help=false: help for parse
-//     -i, --infile="": input file, required
-//     -o, --outfile="": output file, if empty, to stdout
-//     -d, --patdir="": pattern directory,, all files in directory will be used
-//     -p, --patfile="": initial pattern file, required
-//
-// The following command parses a file based on existing rules. Note that the
-// performance number (9570.20 msgs/sec) is mostly due to reading/writing to disk.
-// To get a more realistic performance number, see the benchmark section below.
-//
-//   $ ./sequence parse -d ../../patterns -i ../../data/sshd.all  -o parsed.sshd
-//   Parsed 212897 messages in 22.25 secs, ~ 9570.20 msgs/sec
-//
-// This is an entry from the output file:
-//
-//   Jan 15 19:39:26 jlz sshd[7778]: pam_unix(sshd:session): session opened for user jlz by (uid=0)
-//   #   0: { Field="%createtime%", Type="%ts%", Value="jan 15 19:39:26" }
-//   #   1: { Field="%apphost%", Type="%string%", Value="jlz" }
-//   #   2: { Field="%appname%", Type="%string%", Value="sshd" }
-//   #   3: { Field="%funknown%", Type="%literal%", Value="[" }
-//   #   4: { Field="%sessionid%", Type="%integer%", Value="7778" }
-//   #   5: { Field="%funknown%", Type="%literal%", Value="]" }
-//   #   6: { Field="%funknown%", Type="%literal%", Value=":" }
-//   #   7: { Field="%funknown%", Type="%string%", Value="pam_unix" }
-//   #   8: { Field="%funknown%", Type="%literal%", Value="(" }
-//   #   9: { Field="%funknown%", Type="%literal%", Value="sshd" }
-//   #  10: { Field="%funknown%", Type="%literal%", Value=":" }
-//   #  11: { Field="%funknown%", Type="%string%", Value="session" }
-//   #  12: { Field="%funknown%", Type="%literal%", Value=")" }
-//   #  13: { Field="%funknown%", Type="%literal%", Value=":" }
-//   #  14: { Field="%object%", Type="%string%", Value="session" }
-//   #  15: { Field="%action%", Type="%string%", Value="opened" }
-//   #  16: { Field="%funknown%", Type="%literal%", Value="for" }
-//   #  17: { Field="%funknown%", Type="%literal%", Value="user" }
-//   #  18: { Field="%dstuser%", Type="%string%", Value="jlz" }
-//   #  19: { Field="%funknown%", Type="%literal%", Value="by" }
-//   #  20: { Field="%funknown%", Type="%literal%", Value="(" }
-//   #  21: { Field="%funknown%", Type="%literal%", Value="uid" }
-//   #  22: { Field="%funknown%", Type="%literal%", Value="=" }
-//   #  23: { Field="%funknown%", Type="%integer%", Value="0" }
-//   #  24: { Field="%funknown%", Type="%literal%", Value=")" }
-//
-// ### Benchmark
-//
-//   Usage:
-//	   sequence bench [command]
-//
-//	 Available Commands:
-//	   scan                      benchmark the scanning of a log file, no output is provided
-//     parse                     benchmark the parsing of a log file, no output is provided
-//
-//   Usage:
-//     sequence bench scan [flags]
-//
-//    Available Flags:
-//     -c, --cpuprofile="": CPU profile filename
-//     -h, --help=false: help for bench
-//     -i, --infile="": input file, required
-//     -w, --workers=1: number of parsing workers
-//
-//   Usage:
-//     sequence bench parse [flags]
-//
-//    Available Flags:
-//     -c, --cpuprofile="": CPU profile filename
-//     -h, --help=false: help for bench
-//     -i, --infile="": input file, required
-//     -d, --patdir="": pattern directory,, all files in directory will be used
-//     -p, --patfile="": pattern file, required
-//     -w, --workers=1: number of parsing workers
-//
-// Following are some benchmark examples for two files. First file is a bunch of sshd logs,
-// averaging 98 bytes per message. The second is a Cisco ASA log file, averaging 180 bytes
-// per message.
-//
-//   $ ./sequence bench scan -i ../../data/sshd.all
-//   Scanned 212897 messages in 0.78 secs, ~ 272869.35 msgs/sec
-//
-//   $ ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all
-//   Parsed 212897 messages in 1.69 secs, ~ 126319.27 msgs/sec
-//
-//   $ ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log
-//   Parsed 234815 messages in 2.89 secs, ~ 81323.41 msgs/sec
-//
-// Performance can be improved by adding more cores:
-//
-//   $ GOMAXPROCS=2 ./sequence bench scan -i ../../data/sshd.all -w 2
-//   Scanned 212897 messages in 0.43 secs, ~ 496961.52 msgs/sec
-//
-//   GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/sshd.txt -i ../../data/sshd.all -w 2
-//   Parsed 212897 messages in 1.00 secs, ~ 212711.83 msgs/sec
-//
-//   $ GOMAXPROCS=2 ./sequence bench parse -p ../../patterns/asa.txt -i ../../data/allasa.log -w 2
-//   Parsed 234815 messages in 1.56 secs, ~ 150769.68 msgs/sec
+// Documentation and other information are available at sequence.trustpath.com
 package main
 
 import (
@@ -237,42 +39,6 @@ import (
 )
 
 var (
-	sequenceCmd = &cobra.Command{
-		Use:   "sequence",
-		Short: "sequence is a sequenceial semantic log analyzer and analyzer",
-	}
-
-	scanCmd = &cobra.Command{
-		Use:   "scan",
-		Short: "scan will tokenize a log file or message and output a list of tokens",
-	}
-
-	analyzeCmd = &cobra.Command{
-		Use:   "analyze",
-		Short: "analyze will analyze a log file and output a list of patterns that will match all the log messages",
-	}
-
-	parseCmd = &cobra.Command{
-		Use:   "parse",
-		Short: "parse will parse a log file and output a list of parsed tokens for each of the log messages",
-	}
-
-	benchCmd = &cobra.Command{
-		Use:   "bench",
-		Short: "benchmark scanning or parsing of a log file, no output is provided",
-	}
-
-	benchScanCmd = &cobra.Command{
-		Use:   "scan",
-		Short: "benchmark the scanning of a log file, no output is provided",
-	}
-
-	benchParseCmd = &cobra.Command{
-		Use:   "parse",
-		Short: "benchmark the parsing of a log file, no output is provided",
-	}
-
-	inmsg      string
 	cfgfile    string
 	infile     string
 	outfile    string
@@ -287,53 +53,6 @@ var (
 
 	mbyte = 1024 * 1024
 )
-
-func init() {
-	quit = make(chan struct{})
-	done = make(chan struct{})
-
-	scanCmd.Flags().StringVarP(&inmsg, "msg", "m", "", "message to tokenize")
-	scanCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	scanCmd.Run = scan
-
-	analyzeCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	analyzeCmd.Flags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
-	analyzeCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required")
-	analyzeCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
-	analyzeCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used, optional")
-	analyzeCmd.Flags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
-	analyzeCmd.Run = analyze
-
-	parseCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	parseCmd.Flags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
-	parseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
-	parseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, required")
-	parseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
-	parseCmd.Flags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
-	parseCmd.Run = parse
-
-	benchCmd.AddCommand(benchScanCmd)
-	benchCmd.AddCommand(benchParseCmd)
-
-	benchScanCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	benchScanCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
-	benchScanCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
-	benchScanCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
-	benchScanCmd.Run = benchScan
-
-	benchParseCmd.Flags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	benchParseCmd.Flags().StringVarP(&infile, "infile", "i", "", "input file, required ")
-	benchParseCmd.Flags().StringVarP(&patfile, "patfile", "p", "", "pattern file, required")
-	benchParseCmd.Flags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
-	benchParseCmd.Flags().StringVarP(&cpuprofile, "cpuprofile", "c", "", "CPU profile filename")
-	benchParseCmd.Flags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
-	benchParseCmd.Run = benchParse
-
-	sequenceCmd.AddCommand(scanCmd)
-	sequenceCmd.AddCommand(analyzeCmd)
-	sequenceCmd.AddCommand(parseCmd)
-	sequenceCmd.AddCommand(benchCmd)
-}
 
 func profile() {
 	var f *os.File
@@ -371,19 +90,40 @@ func profile() {
 	}()
 }
 
-func scan(cmd *cobra.Command, args []string) {
-	readConfig()
+func seqfunc(cmd *cobra.Command, args []string) {
+}
 
+func scan(cmd *cobra.Command, args []string) {
 	scanner := sequence.NewScanner()
-	seq := scanMessage(scanner, inmsg)
-	fmt.Println(seq.PrintTokens())
+
+	if infile != "" {
+		// Open input file
+		iscan, ifile := openFile(infile)
+		defer ifile.Close()
+
+		ofile := openOutputFile(outfile)
+		defer ofile.Close()
+
+		for iscan.Scan() {
+			line := iscan.Text()
+			if len(line) == 0 || line[0] == '#' {
+				continue
+			}
+
+			seq := scanMessage(scanner, line)
+			fmt.Fprintf(ofile, "%s\n\n", seq.PrintTokens())
+		}
+	} else if len(args) == 1 && args[0] != "" {
+		seq := scanMessage(scanner, args[0])
+		fmt.Println(seq.PrintTokens())
+	} else {
+		log.Fatal("Invalid input file or string specified")
+	}
 }
 
 func analyze(cmd *cobra.Command, args []string) {
-	readConfig()
-
 	if infile == "" {
-		log.Fatal("Invalid input file")
+		log.Fatal("Invalid input file specified")
 	}
 
 	profile()
@@ -478,10 +218,8 @@ func analyze(cmd *cobra.Command, args []string) {
 }
 
 func parse(cmd *cobra.Command, args []string) {
-	readConfig()
-
 	if infile == "" {
-		log.Fatal("Invalid input file")
+		log.Fatal("Invalid input file specified")
 	}
 
 	profile()
@@ -522,10 +260,6 @@ func parse(cmd *cobra.Command, args []string) {
 }
 
 func benchScan(cmd *cobra.Command, args []string) {
-	if infile == "" {
-		log.Fatal("Invalid input file")
-	}
-
 	iscan, ifile := openFile(infile)
 	defer ifile.Close()
 
@@ -584,8 +318,6 @@ func benchScan(cmd *cobra.Command, args []string) {
 }
 
 func benchParse(cmd *cobra.Command, args []string) {
-	readConfig()
-
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}
@@ -766,12 +498,76 @@ func openOutputFile(fname string) *os.File {
 	return ofile
 }
 
-func readConfig() {
+func main() {
+	quit = make(chan struct{})
+	done = make(chan struct{})
+
+	var (
+		sequenceCmd = &cobra.Command{
+			Use:   "sequence",
+			Short: "sequence is a sequenceial semantic log analyzer and analyzer",
+		}
+
+		scanCmd = &cobra.Command{
+			Use:   "scan",
+			Short: "scan will tokenize a log file or message and output a list of tokens",
+		}
+
+		analyzeCmd = &cobra.Command{
+			Use:   "analyze",
+			Short: "analyze will analyze a log file and output a list of patterns that will match all the log messages",
+		}
+
+		parseCmd = &cobra.Command{
+			Use:   "parse",
+			Short: "parse will parse a log file and output a list of parsed tokens for each of the log messages",
+		}
+
+		benchCmd = &cobra.Command{
+			Use:   "bench",
+			Short: "benchmark scanning or parsing of a log file, no output is provided",
+			Long:  "benchmark scanning or parsing of a log file, no output is provided",
+		}
+
+		benchScanCmd = &cobra.Command{
+			Use:   "scan",
+			Short: "benchmark the scanning of a log file, no output is provided",
+		}
+
+		benchParseCmd = &cobra.Command{
+			Use:   "parse",
+			Short: "benchmark the parsing of a log file, no output is provided",
+		}
+	)
+
+	sequenceCmd.PersistentFlags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
+	sequenceCmd.PersistentFlags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
+	sequenceCmd.PersistentFlags().StringVarP(&infile, "infile", "i", "", "input file, required")
+	sequenceCmd.PersistentFlags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
+	sequenceCmd.PersistentFlags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
+	sequenceCmd.PersistentFlags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
+
+	benchCmd.PersistentFlags().StringVarP(&cpuprofile, "cpuprofile", "", "", "CPU profile filename")
+	benchCmd.PersistentFlags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
+
+	scanCmd.Run = scan
+	analyzeCmd.Run = analyze
+	parseCmd.Run = parse
+	benchCmd.Run = benchScan
+	benchScanCmd.Run = benchScan
+	benchParseCmd.Run = benchParse
+
+	benchCmd.AddCommand(benchScanCmd)
+	benchCmd.AddCommand(benchParseCmd)
+
+	sequenceCmd.AddCommand(scanCmd)
+	sequenceCmd.AddCommand(analyzeCmd)
+	sequenceCmd.AddCommand(parseCmd)
+	sequenceCmd.AddCommand(benchCmd)
+
 	if err := sequence.ReadConfig(cfgfile); err != nil {
 		log.Fatal(err)
 	}
-}
 
-func main() {
 	sequenceCmd.Execute()
 }

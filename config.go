@@ -41,6 +41,7 @@ var (
 
 func ReadConfig(file string) error {
 	var configInfo struct {
+		Version     string
 		TimeFormats []string
 		Fields      []string
 
