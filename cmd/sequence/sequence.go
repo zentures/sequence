@@ -43,14 +43,15 @@ var (
 	infile     string
 	outfile    string
 	patfile    string
-	patdir     string
 	cpuprofile string
 	workers    int
 	format     string
 
 	quit chan struct{}
 	done chan struct{}
+)
 
+const (
 	mbyte = 1024 * 1024
 )
 
@@ -90,15 +91,12 @@ func profile() {
 	}()
 }
 
-func seqfunc(cmd *cobra.Command, args []string) {
-}
-
 func scan(cmd *cobra.Command, args []string) {
 	scanner := sequence.NewScanner()
 
 	if infile != "" {
 		// Open input file
-		iscan, ifile := openFile(infile)
+		iscan, ifile := openInputFile(infile)
 		defer ifile.Close()
 
 		ofile := openOutputFile(outfile)
@@ -133,7 +131,7 @@ func analyze(cmd *cobra.Command, args []string) {
 	scanner := sequence.NewScanner()
 
 	// Open input file
-	iscan, ifile := openFile(infile)
+	iscan, ifile := openInputFile(infile)
 	defer ifile.Close()
 
 	// For all the log messages, if we can't parse it, then let's add it to the
@@ -154,11 +152,17 @@ func analyze(cmd *cobra.Command, args []string) {
 	ifile.Close()
 	analyzer.Finalize()
 
-	iscan, ifile = openFile(infile)
+	iscan, ifile = openInputFile(infile)
 	defer ifile.Close()
 
-	pmap := make(map[string]map[string]string)
-	amap := make(map[string]map[string]string)
+	pmap := make(map[string]struct {
+		ex  string
+		cnt int
+	})
+	amap := make(map[string]struct {
+		ex  string
+		cnt int
+	})
 	n := 0
 
 	// Now that we have built the analyzer, let's go through each log message again
@@ -175,22 +179,32 @@ func analyze(cmd *cobra.Command, args []string) {
 		pseq, err := parser.Parse(seq)
 		if err == nil {
 			pat := pseq.String()
-			sig := pseq.Signature()
-			if _, ok := pmap[pat]; !ok {
-				pmap[pat] = make(map[string]string)
+			stat, ok := pmap[pat]
+			if !ok {
+				stat = struct {
+					ex  string
+					cnt int
+				}{}
 			}
-			pmap[pat][sig] = line
+			stat.ex = line
+			stat.cnt++
+			pmap[pat] = stat
 		} else {
 			aseq, err := analyzer.Analyze(seq)
 			if err != nil {
-				log.Printf("Error parsing: %s", line)
+				log.Printf("Error analyzing: %s", line)
 			} else {
 				pat := aseq.String()
-				sig := aseq.Signature()
-				if _, ok := amap[pat]; !ok {
-					amap[pat] = make(map[string]string)
+				stat, ok := amap[pat]
+				if !ok {
+					stat = struct {
+						ex  string
+						cnt int
+					}{}
 				}
-				amap[pat][sig] = line
+				stat.ex = line
+				stat.cnt++
+				amap[pat] = stat
 			}
 		}
 	}
@@ -198,20 +212,12 @@ func analyze(cmd *cobra.Command, args []string) {
 	ofile := openOutputFile(outfile)
 	defer ofile.Close()
 
-	for pat, lines := range pmap {
-		fmt.Fprintf(ofile, "%s\n", pat)
-		for _, line := range lines {
-			fmt.Fprintf(ofile, "# %s\n", line)
-		}
-		fmt.Fprintln(ofile)
+	for pat, stat := range pmap {
+		fmt.Fprintf(ofile, "%s\n# %d log messages matched\n# %s\n\n", pat, stat.cnt, stat.ex)
 	}
 
-	for pat, lines := range amap {
-		fmt.Fprintf(ofile, "%s\n", pat)
-		for _, line := range lines {
-			fmt.Fprintf(ofile, "# %s\n", line)
-		}
-		fmt.Fprintln(ofile)
+	for pat, stat := range amap {
+		fmt.Fprintf(ofile, "%s\n# %d log messages matched\n# %s\n\n", pat, stat.cnt, stat.ex)
 	}
 
 	log.Printf("Analyzed %d messages, found %d unique patterns, %d are new.", n, len(pmap)+len(amap), len(amap))
@@ -227,7 +233,7 @@ func parse(cmd *cobra.Command, args []string) {
 	parser := buildParser()
 	scanner := sequence.NewScanner()
 
-	iscan, ifile := openFile(infile)
+	iscan, ifile := openInputFile(infile)
 	defer ifile.Close()
 
 	ofile := openOutputFile(outfile)
@@ -260,7 +266,7 @@ func parse(cmd *cobra.Command, args []string) {
 }
 
 func benchScan(cmd *cobra.Command, args []string) {
-	iscan, ifile := openFile(infile)
+	iscan, ifile := openInputFile(infile)
 	defer ifile.Close()
 
 	var lines []string
@@ -324,7 +330,7 @@ func benchParse(cmd *cobra.Command, args []string) {
 
 	parser := buildParser()
 
-	iscan, ifile := openFile(infile)
+	iscan, ifile := openInputFile(infile)
 	defer ifile.Close()
 
 	var lines []string
@@ -402,23 +408,28 @@ func scanMessage(scanner *sequence.Scanner, data string) sequence.Sequence {
 	return seq
 }
 
-func buildParser() *sequence.GeneralParser {
-	parser := sequence.NewGeneralParser()
-	scanner := sequence.NewScanner()
+func buildParser() *sequence.Parser {
+	parser := sequence.NewParser()
+
+	if patfile == "" {
+		return parser
+	}
 
 	var files []string
 
-	if patdir != "" {
-		files = getDirOfFiles(patdir)
-	}
-
-	if patfile != "" {
+	if fi, err := os.Stat(patfile); err != nil {
+		log.Fatal(err)
+	} else if fi.Mode().IsDir() {
+		files = getDirOfFiles(patfile)
+	} else {
 		files = append(files, patfile)
 	}
 
+	scanner := sequence.NewScanner()
+
 	for _, file := range files {
 		// Open pattern file
-		pscan, pfile := openFile(file)
+		pscan, pfile := openInputFile(file)
 
 		for pscan.Scan() {
 			line := pscan.Text()
@@ -442,7 +453,7 @@ func buildParser() *sequence.GeneralParser {
 	return parser
 }
 
-func openFile(fname string) (*bufio.Scanner, *os.File) {
+func openInputFile(fname string) (*bufio.Scanner, *os.File) {
 	var s *bufio.Scanner
 
 	f, err := os.Open(fname)
@@ -498,6 +509,28 @@ func openOutputFile(fname string) *os.File {
 	return ofile
 }
 
+func findConfig() string {
+	if cfgfile == "" {
+		cfgfile = "./sequence.toml"
+
+		if _, err := os.Stat(cfgfile); err == nil {
+			return cfgfile
+		} else {
+			if slash := strings.LastIndex(os.Args[0], "/"); slash != -1 {
+				cfgfile = os.Args[0][:slash] + "/sequence.toml"
+
+				if _, err := os.Stat(cfgfile); err == nil {
+					return cfgfile
+				}
+			}
+		}
+
+		log.Fatalln("No configuration file found")
+	}
+
+	return cfgfile
+}
+
 func main() {
 	quit = make(chan struct{})
 	done = make(chan struct{})
@@ -505,55 +538,52 @@ func main() {
 	var (
 		sequenceCmd = &cobra.Command{
 			Use:   "sequence",
-			Short: "sequence is a sequenceial semantic log analyzer and analyzer",
+			Short: "sequence is a high performance sequential log analyzer and parser",
 		}
 
 		scanCmd = &cobra.Command{
 			Use:   "scan",
-			Short: "scan will tokenize a log file or message and output a list of tokens",
+			Short: "tokenizes a log file or message and output a list of tokens",
 		}
 
 		analyzeCmd = &cobra.Command{
 			Use:   "analyze",
-			Short: "analyze will analyze a log file and output a list of patterns that will match all the log messages",
+			Short: "analyzes a log file and output a list of patterns that will match all the log messages",
 		}
 
 		parseCmd = &cobra.Command{
 			Use:   "parse",
-			Short: "parse will parse a log file and output a list of parsed tokens for each of the log messages",
+			Short: "parses a log file and output a list of parsed tokens for each of the log messages",
 		}
 
 		benchCmd = &cobra.Command{
 			Use:   "bench",
-			Short: "benchmark scanning or parsing of a log file, no output is provided",
-			Long:  "benchmark scanning or parsing of a log file, no output is provided",
+			Short: "benchmarks scanning or parsing of a log file, no output is provided",
 		}
 
 		benchScanCmd = &cobra.Command{
 			Use:   "scan",
-			Short: "benchmark the scanning of a log file, no output is provided",
+			Short: "benchmarks the scanning of a log file, no output is provided",
 		}
 
 		benchParseCmd = &cobra.Command{
 			Use:   "parse",
-			Short: "benchmark the parsing of a log file, no output is provided",
+			Short: "benchmarks the parsing of a log file, no output is provided",
 		}
 	)
 
-	sequenceCmd.PersistentFlags().StringVarP(&format, "fmt", "f", "general", "format of the message to tokenize, can be 'json' or 'general'")
-	sequenceCmd.PersistentFlags().StringVarP(&cfgfile, "config", "c", "./sequence.toml", "TOML-formatted configuration file")
-	sequenceCmd.PersistentFlags().StringVarP(&infile, "infile", "i", "", "input file, required")
-	sequenceCmd.PersistentFlags().StringVarP(&patfile, "patfile", "p", "", "initial pattern file, optional")
-	sequenceCmd.PersistentFlags().StringVarP(&patdir, "patdir", "d", "", "pattern directory,, all files in directory will be used")
-	sequenceCmd.PersistentFlags().StringVarP(&outfile, "outfile", "o", "", "output file, if empty, to stdout")
+	sequenceCmd.PersistentFlags().StringVarP(&cfgfile, "config", "", "", "TOML-formatted configuration file, default checks ./sequence.toml, then sequence.toml in the same directory as program")
+	sequenceCmd.PersistentFlags().StringVarP(&format, "format", "", "", "format of the message to tokenize, can be 'json' or leave empty")
+	sequenceCmd.PersistentFlags().StringVarP(&infile, "input", "i", "", "input file, required")
+	sequenceCmd.PersistentFlags().StringVarP(&outfile, "output", "o", "", "output file, if empty, to stdout")
+	sequenceCmd.PersistentFlags().StringVarP(&patfile, "patterns", "p", "", "patterns, can be a file or directory, used by analyze and parse")
 
 	benchCmd.PersistentFlags().StringVarP(&cpuprofile, "cpuprofile", "", "", "CPU profile filename")
-	benchCmd.PersistentFlags().IntVarP(&workers, "workers", "w", 1, "number of parsing workers")
+	benchCmd.PersistentFlags().IntVarP(&workers, "workers", "", 1, "number of parsing workers")
 
 	scanCmd.Run = scan
 	analyzeCmd.Run = analyze
 	parseCmd.Run = parse
-	benchCmd.Run = benchScan
 	benchScanCmd.Run = benchScan
 	benchParseCmd.Run = benchParse
 
@@ -564,6 +594,8 @@ func main() {
 	sequenceCmd.AddCommand(analyzeCmd)
 	sequenceCmd.AddCommand(parseCmd)
 	sequenceCmd.AddCommand(benchCmd)
+
+	cfgfile = findConfig()
 
 	if err := sequence.ReadConfig(cfgfile); err != nil {
 		log.Fatal(err)
