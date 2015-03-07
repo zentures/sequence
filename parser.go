@@ -33,7 +33,7 @@ const (
 // based on pattern sequence supplied, and for each message sequence, returns the
 // matching pattern sequence. Each of the message tokens will be marked with the
 // semantic field types.
-type GeneralParser struct {
+type Parser struct {
 	root   *parseNode
 	height int
 	mu     sync.RWMutex
@@ -65,8 +65,8 @@ func (this stackParseNode) String() string {
 	return fmt.Sprintf("level=%d, score=%d, %s", this.level, this.score, this.node)
 }
 
-func NewGeneralParser() *GeneralParser {
-	return &GeneralParser{
+func NewParser() *Parser {
+	return &Parser{
 		root:   newParseNode(),
 		height: 0,
 	}
@@ -85,8 +85,8 @@ func (this *parseNode) String() string {
 
 // Add will add a single pattern sequence to the parser tree. This effectively
 // builds the parser tree so it can be used for parsing later.
-//func (this *GeneralParser) Add(s string) error {
-func (this *GeneralParser) Add(seq Sequence) error {
+//func (this *Parser) Add(s string) error {
+func (this *Parser) Add(seq Sequence) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -199,8 +199,8 @@ func (this *GeneralParser) Add(seq Sequence) error {
 
 // Parse will take the message sequence supplied and go through the parser tree to
 // find the matching pattern sequence. If found, the pattern sequence is returned.
-//func (this *GeneralParser) Parse(s string) (Sequence, error) {
-func (this *GeneralParser) Parse(seq Sequence) (Sequence, error) {
+//func (this *Parser) Parse(s string) (Sequence, error) {
+func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 	this.mu.RLock()
 	defer this.mu.RUnlock()
 

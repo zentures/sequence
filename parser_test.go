@@ -211,7 +211,7 @@ func init() {
 }
 
 func TestParserMatchPatterns(t *testing.T) {
-	parser := NewGeneralParser()
+	parser := NewParser()
 	scanner := NewScanner()
 
 	var (
@@ -243,7 +243,7 @@ func TestParserMatchPatterns(t *testing.T) {
 }
 
 func TestParserParseMessages(t *testing.T) {
-	parser := NewGeneralParser()
+	parser := NewParser()
 	scanner := NewScanner()
 
 	var (
@@ -282,7 +282,7 @@ func BenchmarkParserParseNoMeta(b *testing.B) {
 }
 
 func benchmarkRunParser(b *testing.B, tc struct{ format, msg, rule string }) {
-	parser := NewGeneralParser()
+	parser := NewParser()
 	scanner := NewScanner()
 
 	seq, _ := scanner.Scan(tc.rule)
