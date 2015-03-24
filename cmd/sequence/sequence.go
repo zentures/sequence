@@ -92,6 +92,8 @@ func profile() {
 }
 
 func scan(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	scanner := sequence.NewScanner()
 
 	if infile != "" {
@@ -120,6 +122,8 @@ func scan(cmd *cobra.Command, args []string) {
 }
 
 func analyze(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file specified")
 	}
@@ -224,6 +228,8 @@ func analyze(cmd *cobra.Command, args []string) {
 }
 
 func parse(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file specified")
 	}
@@ -266,6 +272,8 @@ func parse(cmd *cobra.Command, args []string) {
 }
 
 func benchScan(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	iscan, ifile := openInputFile(infile)
 	defer ifile.Close()
 
@@ -324,6 +332,8 @@ func benchScan(cmd *cobra.Command, args []string) {
 }
 
 func benchParse(cmd *cobra.Command, args []string) {
+	readConfig()
+
 	if infile == "" {
 		log.Fatal("Invalid input file")
 	}
@@ -509,26 +519,24 @@ func openOutputFile(fname string) *os.File {
 	return ofile
 }
 
-func findConfig() string {
+func readConfig() {
 	if cfgfile == "" {
 		cfgfile = "./sequence.toml"
 
-		if _, err := os.Stat(cfgfile); err == nil {
-			return cfgfile
-		} else {
+		if _, err := os.Stat(cfgfile); err != nil {
 			if slash := strings.LastIndex(os.Args[0], "/"); slash != -1 {
 				cfgfile = os.Args[0][:slash] + "/sequence.toml"
 
-				if _, err := os.Stat(cfgfile); err == nil {
-					return cfgfile
+				if _, err := os.Stat(cfgfile); err != nil {
+					log.Fatalln("No configuration file found")
 				}
 			}
 		}
-
-		log.Fatalln("No configuration file found")
 	}
 
-	return cfgfile
+	if err := sequence.ReadConfig(cfgfile); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func main() {
@@ -594,12 +602,6 @@ func main() {
 	sequenceCmd.AddCommand(analyzeCmd)
 	sequenceCmd.AddCommand(parseCmd)
 	sequenceCmd.AddCommand(benchCmd)
-
-	cfgfile = findConfig()
-
-	if err := sequence.ReadConfig(cfgfile); err != nil {
-		log.Fatal(err)
-	}
 
 	sequenceCmd.Execute()
 }
