@@ -85,6 +85,7 @@ fields = [
 	"outiface:string",			# The outgoing interface
 	"policyid:integer",			# The policy ID
 	"sessionid:integer",		# The session or process ID
+	"threadid:string",
 	"object:string",			# The object affected.
 	"action:string",			# The action taken
 	"command:string",			# The command executed

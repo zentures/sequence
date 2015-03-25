@@ -40,6 +40,8 @@ type Token struct {
 	minus bool // For parser, should this token consume the rest of the tokens
 	plus  bool // For parser, should this token consume one or more tokens
 	star  bool // For parser, should this token consume zero or more tokens
+
+	until string // For parser, consume all tokens until, but not including, this string
 }
 
 func (this Token) String() string {

@@ -39,18 +39,23 @@ func (this Sequence) String() string {
 
 		if token.Field != FieldUnknown {
 			c = token.Field.String()
-			if token.Type != token.Field.TokenType() {
-				c += ":" + token.Type.String()
-			} else if token.plus || token.minus || token.star {
-				c += ":"
-			}
 
-			if token.plus {
-				c += ":+"
-			} else if token.minus {
-				c += ":-"
-			} else if token.star {
-				c += ":*"
+			if token.until != "" {
+				c += ":-:" + token.until
+			} else {
+				if token.Type != token.Field.TokenType() {
+					c += ":" + token.Type.String()
+				} else if token.plus || token.minus || token.star {
+					c += ":"
+				}
+
+				if token.plus {
+					c += ":+"
+				} else if token.minus {
+					c += ":-"
+				} else if token.star {
+					c += ":*"
+				}
 			}
 
 			c = "%" + c + "%"

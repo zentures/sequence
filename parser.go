@@ -55,10 +55,11 @@ type parseNode struct {
 }
 
 type stackParseNode struct {
-	node  *parseNode
-	level int    // current level of the node
-	score int    // the score of the path traversed
-	value string // value of the token evaluated
+	node   *parseNode
+	level  int    // current level of the node
+	seqidx int    // current index of the sequence being parsed
+	score  int    // the score of the path traversed
+	value  string // value of the token evaluated
 }
 
 func (this stackParseNode) String() string {
@@ -113,7 +114,7 @@ func (this *Parser) Add(seq Sequence) error {
 			// token nodes
 			if parent.tc[token.Type] != nil {
 				for _, n := range parent.tc[token.Type] {
-					if n.Type == token.Type && n.Field == token.Field {
+					if n.Type == token.Type && n.Field == token.Field && n.until == token.until {
 						found = n
 						break
 					}
@@ -141,6 +142,7 @@ func (this *Parser) Add(seq Sequence) error {
 				found = newParseNode()
 				found.Token = token
 				found.Value = v
+				found.until = strings.ToLower(token.until)
 				parent.lc[v] = found
 				parent.parent = true
 			}
@@ -228,7 +230,7 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 		// pop the last element from the toVisit stack
 		toVisit, parent = toVisit[:len(toVisit)-1], toVisit[len(toVisit)-1]
 
-		//log.Printf("parent=%s, len(seq)=%d", parent.String(), len(seq))
+		// glog.Debugf("parent=%s, len(seq)=%d", parent.String(), len(seq))
 
 		// parent is the current token, if it's added to the list, that means it matched
 		// the last token, which means it should be part of the path. If it's level 0,
@@ -239,19 +241,36 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 			}
 			path = path[:parent.level]
 
-			path[parent.level-1] = parent.node.Token
-			path[parent.level-1].Value = parent.value
+			l := parent.level - 1
+			path[l] = parent.node.Token
+			path[l].Value = parent.value
+
+			if parent.node.until != "" {
+				i := parent.seqidx
+				for ; i < len(seq) && seq[i].Value != parent.node.until; i++ {
+					path[l].Value += " " + seq[i].Value
+				}
+
+				parent.seqidx = i
+
+				// Consumed all tokens, yet this is not a leaf, then wrong, continue
+				if parent.seqidx == len(seq) && !parent.node.leaf {
+					continue
+				}
+			}
 		}
 
 		if parent.node.leaf {
 			if parent.node.minus {
 				l := len(path) - 1
-				for i := parent.level; i < len(seq); i++ {
+				i := parent.seqidx
+				for ; i < len(seq); i++ {
 					path[l].Value += " " + seq[i].Value
 				}
+				parent.seqidx = i
 			}
 
-			if parent.node.minus || len(seq) <= parent.level {
+			if len(seq) <= parent.seqidx {
 				// end of tokens, so let's finalize the current path. If the current
 				// node is a leaf, that means we matched the sequence, so let's add it
 				// to the path list.
@@ -269,30 +288,32 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 		// be greater than the current level.
 		var token Token
 
-		if len(seq) > parent.level {
-			token = seq[parent.level]
+		//if len(seq) > parent.level {
+		if len(seq) > parent.seqidx {
+			token = seq[parent.seqidx]
 		} else {
 			continue
 		}
 
-		//log.Printf("Checking token=%s", token)
+		// glog.Debugf("Checking token=%s", token)
 
 		switch token.Type {
 		case TokenLiteral:
-			if len(token.Value) > 1 || (len(token.Value) == 1 && isLiteral(rune(token.Value[0]))) {
-				for _, n := range parent.node.tc[TokenString] {
-					toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + partialMatchWeight, token.Value})
-				}
+			// Find any children that's a string token and add them to the stack
+			// if len(token.Value) > 1 || (len(token.Value) == 1 && isLiteral(rune(token.Value[0]))) {
+			for _, n := range parent.node.tc[TokenString] {
+				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.seqidx + 1, parent.score + partialMatchWeight, token.Value})
 			}
+			// }
 
 			// If the values match, then it's a full match, add it to the stack
 			if n, ok := parent.node.lc[token.Value]; ok {
-				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + fullMatchWeight, token.Value})
+				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.seqidx + 1, parent.score + fullMatchWeight, token.Value})
 			}
 
 		default:
 			for _, n := range parent.node.tc[token.Type] {
-				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.score + fullMatchWeight, token.Value})
+				toVisit = append(toVisit, stackParseNode{n, parent.level + 1, parent.seqidx + 1, parent.score + fullMatchWeight, token.Value})
 			}
 		}
 	}
@@ -353,6 +374,7 @@ func processFieldToken(token Token) (Token, error) {
 		// - %field:type%
 		// - %field:meta%
 		// - %type:meta%
+		// - %literal:until%
 
 		meta := false
 
@@ -382,13 +404,19 @@ func processFieldToken(token Token) (Token, error) {
 		}
 
 	case 3:
-		// must be %field:type:meta%
+		// %field:type:meta%
+		// %field:-:until%
 
 		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
 			return token, fmt.Errorf("Invalid field token %q", token.Value)
 		}
 
-		if parts[1] == "" {
+		if parts[1] == metaMinus {
+			token.minus = true
+			token.Type = token.Field.TokenType()
+			token.until = parts[2]
+			return token, nil
+		} else if parts[1] == "" {
 			token.Type = token.Field.TokenType()
 		} else if token.Type = name2TokenType(parts[1]); token.Type == TokenUnknown {
 			return token, fmt.Errorf("Invalid parts token %q: unknown type", token.Value)
