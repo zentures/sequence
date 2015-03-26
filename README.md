@@ -67,8 +67,8 @@ Performance can be improved by adding more cores:
 
 ### Limitations
 
-* `sequence` does not handle multi-line logs. Each log message must appear as a single line. So if there's multi-line logs, they must be first be converted into a single line.
-* `sequence` has been only tested with a limited set of system (Linux, AIX, sudo, ssh, su, dhcp, etc etc), network (ASA, PIX, Neoteris, CheckPoint, Juniper Firewall) and infrastructure application (apache, bluecoat, etc) logs. If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/strace/sequence/issues) and we can arrange a way for me to download and test your logs.
+* `sequence` does not handle multi-line logs. Each log message must appear as a single line. So if there's multi-line logs, they must first be converted into a single line.
+* `sequence` has only been tested with a limited set of system (Linux, AIX, sudo, ssh, su, dhcp, etc etc), network (ASA, PIX, Neoteris, CheckPoint, Juniper Firewall) and infrastructure application (apache, bluecoat, etc) logs. If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/strace/sequence/issues) and we can arrange a way for me to download and test your logs.
 
 ### Usage
 
