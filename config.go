@@ -19,22 +19,22 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/surge/porter2"
+	"github.com/zhenjl/porter2"
 )
 
 var (
 	config struct {
-		fieldIDs   map[string]FieldType
-		fieldNames []string
-		fieldTypes []TokenType
+		tagIDs   map[string]TagType
+		tagNames []string
+		tagTypes []TokenType
 	}
 
 	keymaps struct {
-		keywords map[string]FieldType
-		prekeys  map[string][]FieldType
+		keywords map[string]TagType
+		prekeys  map[string][]TagType
 	}
 
-	FieldTypesCount int
+	TagTypesCount   int
 	TokenTypesCount = int(token__END__) + 1
 	allTypesCount   int
 )
@@ -43,7 +43,7 @@ func ReadConfig(file string) error {
 	var configInfo struct {
 		Version     string
 		TimeFormats []string
-		Fields      []string
+		Tags        []string
 
 		Analyzer struct {
 			Prekeys  map[string][]string
@@ -57,43 +57,43 @@ func ReadConfig(file string) error {
 
 	timeFsmRoot = buildTimeFSM(configInfo.TimeFormats)
 
-	config.fieldIDs = make(map[string]FieldType, 30)
-	config.fieldNames = config.fieldNames[:0]
-	config.fieldTypes = config.fieldTypes[:0]
+	config.tagIDs = make(map[string]TagType, 30)
+	config.tagNames = config.tagNames[:0]
+	config.tagTypes = config.tagTypes[:0]
 
-	keymaps.keywords = make(map[string]FieldType, 30)
-	keymaps.prekeys = make(map[string][]FieldType, 30)
+	keymaps.keywords = make(map[string]TagType, 30)
+	keymaps.prekeys = make(map[string][]TagType, 30)
 
-	var ftype FieldType = 0
-	config.fieldIDs["funknown"] = ftype
-	config.fieldNames = append(config.fieldNames, "funknown")
-	config.fieldTypes = append(config.fieldTypes, TokenUnknown)
+	var ftype TagType = 0
+	config.tagIDs["funknown"] = ftype
+	config.tagNames = append(config.tagNames, "funknown")
+	config.tagTypes = append(config.tagTypes, TokenUnknown)
 	ftype++
 
-	for _, f := range configInfo.Fields {
+	for _, f := range configInfo.Tags {
 		fs := strings.Split(f, ":")
 		if len(fs) != 2 || fs[1] == "" {
-			return fmt.Errorf("Error parsing field %q: missing token type", f)
+			return fmt.Errorf("Error parsing tag %q: missing token type", f)
 		}
 
-		// field type name, token type
+		// tag type name, token type
 		tt := name2TokenType(fs[1])
 		if tt < TokenLiteral || tt > TokenString {
-			return fmt.Errorf("Error parsing field %q: invalid token type", f)
+			return fmt.Errorf("Error parsing tag %q: invalid token type", f)
 		}
 
-		config.fieldIDs[fs[0]] = ftype
-		config.fieldNames = append(config.fieldNames, fs[0])
-		config.fieldTypes = append(config.fieldTypes, tt)
+		config.tagIDs[fs[0]] = ftype
+		config.tagNames = append(config.tagNames, fs[0])
+		config.tagTypes = append(config.tagTypes, tt)
 		ftype++
 	}
 
-	for f, t := range config.fieldIDs {
-		predefineAnalyzerFields(f, t)
+	for f, t := range config.tagIDs {
+		predefineAnalyzerTags(f, t)
 	}
 
 	for w, list := range configInfo.Analyzer.Keywords {
-		if f, ok := config.fieldIDs[w]; ok {
+		if f, ok := config.tagIDs[w]; ok {
 			for _, kw := range list {
 				pw := porter2.Stem(kw)
 				keymaps.keywords[pw] = f
@@ -103,173 +103,173 @@ func ReadConfig(file string) error {
 
 	for w, m := range configInfo.Analyzer.Prekeys {
 		for _, fw := range m {
-			if f, ok := config.fieldIDs[fw]; ok {
+			if f, ok := config.tagIDs[fw]; ok {
 				keymaps.prekeys[w] = append(keymaps.prekeys[w], f)
 			}
 		}
 	}
 
-	FieldTypesCount = len(config.fieldNames)
-	allTypesCount = TokenTypesCount + FieldTypesCount
+	TagTypesCount = len(config.tagNames)
+	allTypesCount = TokenTypesCount + TagTypesCount
 
 	return nil
 }
 
-func predefineAnalyzerFields(f string, t FieldType) {
+func predefineAnalyzerTags(f string, t TagType) {
 	switch f {
 	case "msgid":
-		FieldMsgId = t
+		TagMsgId = t
 	case "msgtime":
-		FieldMsgTime = t
+		TagMsgTime = t
 	case "severity":
-		FieldSeverity = t
+		TagSeverity = t
 	case "priority":
-		FieldPriority = t
+		TagPriority = t
 	case "apphost":
-		FieldAppHost = t
+		TagAppHost = t
 	case "appip":
-		FieldAppIP = t
+		TagAppIP = t
 	case "appvendor":
-		FieldAppVendor = t
+		TagAppVendor = t
 	case "appname":
-		FieldAppName = t
+		TagAppName = t
 	case "srcdomain":
-		FieldSrcDomain = t
+		TagSrcDomain = t
 	case "srczone":
-		FieldSrcZone = t
+		TagSrcZone = t
 	case "srchost":
-		FieldSrcHost = t
+		TagSrcHost = t
 	case "srcip":
-		FieldSrcIP = t
+		TagSrcIP = t
 	case "srcipnat":
-		FieldSrcIPNAT = t
+		TagSrcIPNAT = t
 	case "srcport":
-		FieldSrcPort = t
+		TagSrcPort = t
 	case "srcportnat":
-		FieldSrcPortNAT = t
+		TagSrcPortNAT = t
 	case "srcmac":
-		FieldSrcMac = t
+		TagSrcMac = t
 	case "srcuser":
-		FieldSrcUser = t
+		TagSrcUser = t
 	case "srcuid":
-		FieldSrcUid = t
+		TagSrcUid = t
 	case "srcgroup":
-		FieldSrcGroup = t
+		TagSrcGroup = t
 	case "srcgid":
-		FieldSrcGid = t
+		TagSrcGid = t
 	case "srcemail":
-		FieldSrcEmail = t
+		TagSrcEmail = t
 	case "dstdomain":
-		FieldDstDomain = t
+		TagDstDomain = t
 	case "dstzone":
-		FieldDstZone = t
+		TagDstZone = t
 	case "dsthost":
-		FieldDstHost = t
+		TagDstHost = t
 	case "dstip":
-		FieldDstIP = t
+		TagDstIP = t
 	case "dstipnat":
-		FieldDstIPNAT = t
+		TagDstIPNAT = t
 	case "dstport":
-		FieldDstPort = t
+		TagDstPort = t
 	case "dstportnat":
-		FieldDstPortNAT = t
+		TagDstPortNAT = t
 	case "dstmac":
-		FieldDstMac = t
+		TagDstMac = t
 	case "dstuser":
-		FieldDstUser = t
+		TagDstUser = t
 	case "dstuid":
-		FieldDstUid = t
+		TagDstUid = t
 	case "dstgroup":
-		FieldDstGroup = t
+		TagDstGroup = t
 	case "dstgid":
-		FieldDstGid = t
+		TagDstGid = t
 	case "dstemail":
-		FieldDstEmail = t
+		TagDstEmail = t
 	case "protocol":
-		FieldProtocol = t
+		TagProtocol = t
 	case "iniface":
-		FieldInIface = t
+		TagInIface = t
 	case "outiface":
-		FieldOutIface = t
+		TagOutIface = t
 	case "policyid":
-		FieldPolicyID = t
+		TagPolicyID = t
 	case "sessionid":
-		FieldSessionID = t
+		TagSessionID = t
 	case "object":
-		FieldObject = t
+		TagObject = t
 	case "action":
-		FieldAction = t
+		TagAction = t
 	case "command":
-		FieldCommand = t
+		TagCommand = t
 	case "method":
-		FieldMethod = t
+		TagMethod = t
 	case "status":
-		FieldStatus = t
+		TagStatus = t
 	case "reason":
-		FieldReason = t
+		TagReason = t
 	case "bytesrecv":
-		FieldBytesRecv = t
+		TagBytesRecv = t
 	case "bytessent":
-		FieldBytesSent = t
+		TagBytesSent = t
 	case "pktsrecv":
-		FieldPktsRecv = t
+		TagPktsRecv = t
 	case "pktssent":
-		FieldPktsSent = t
+		TagPktsSent = t
 	case "duration":
-		FieldDuration = t
+		TagDuration = t
 	}
 }
 
 var (
-	FieldUnknown    FieldType = 0
-	FieldMsgId      FieldType // The message identifier
-	FieldMsgTime    FieldType // The timestamp that’s part of the log message
-	FieldSeverity   FieldType // The severity of the event, e.g., Emergency, …
-	FieldPriority   FieldType // The pirority of the event
-	FieldAppHost    FieldType // The hostname of the host where the log message is generated
-	FieldAppIP      FieldType // The IP address of the host where the application that generated the log message is running on.
-	FieldAppVendor  FieldType // The type of application that generated the log message, e.g., Cisco, ISS
-	FieldAppName    FieldType // The name of the application that generated the log message, e.g., asa, snort, sshd
-	FieldSrcDomain  FieldType // The domain name of the initiator of the event, usually a Windows domain
-	FieldSrcZone    FieldType // The originating zone
-	FieldSrcHost    FieldType // The hostname of the originator of the event or connection.
-	FieldSrcIP      FieldType // The IPv4 address of the originator of the event or connection.
-	FieldSrcIPNAT   FieldType // The natted (network address translation) IP of the originator of the event or connection.
-	FieldSrcPort    FieldType // The port number of the originating connection.
-	FieldSrcPortNAT FieldType // The natted port number of the originating connection.
-	FieldSrcMac     FieldType // The mac address of the host that originated the connection.
-	FieldSrcUser    FieldType // The user that originated the session.
-	FieldSrcUid     FieldType // The user id that originated the session.
-	FieldSrcGroup   FieldType // The group that originated the session.
-	FieldSrcGid     FieldType // The group id that originated the session.
-	FieldSrcEmail   FieldType // The originating email address
-	FieldDstDomain  FieldType // The domain name of the destination of the event, usually a Windows domain
-	FieldDstZone    FieldType // The destination zone
-	FieldDstHost    FieldType // The hostname of the destination of the event or connection.
-	FieldDstIP      FieldType // The IPv4 address of the destination of the event or connection.
-	FieldDstIPNAT   FieldType // The natted (network address translation) IP of the destination of the event or connection.
-	FieldDstPort    FieldType // The destination port number of the connection.
-	FieldDstPortNAT FieldType // The natted destination port number of the connection.
-	FieldDstMac     FieldType // The mac address of the destination host.
-	FieldDstUser    FieldType // The user at the destination.
-	FieldDstUid     FieldType // The user id that originated the session.
-	FieldDstGroup   FieldType // The group that originated the session.
-	FieldDstGid     FieldType // The group id that originated the session.
-	FieldDstEmail   FieldType // The destination email address
-	FieldProtocol   FieldType // The protocol, such as TCP, UDP, ICMP, of the connection
-	FieldInIface    FieldType // The incoming FieldTypeerface
-	FieldOutIface   FieldType // The outgoing FieldTypeerface
-	FieldPolicyID   FieldType // The policy ID
-	FieldSessionID  FieldType // The session or process ID
-	FieldObject     FieldType // The object affected.
-	FieldAction     FieldType // The action taken
-	FieldCommand    FieldType // The command executed
-	FieldMethod     FieldType // The method in which the action was taken, for example, public key or password for ssh
-	FieldStatus     FieldType // The status of the action taken
-	FieldReason     FieldType // The reason for the action taken or the status returned
-	FieldBytesRecv  FieldType // The number of bytes received
-	FieldBytesSent  FieldType // The number of bytes sent
-	FieldPktsRecv   FieldType // The number of packets received
-	FieldPktsSent   FieldType // The number of packets sent
-	FieldDuration   FieldType // The duration of the session
+	TagUnknown    TagType = 0
+	TagMsgId      TagType // The message identifier
+	TagMsgTime    TagType // The timestamp that’s part of the log message
+	TagSeverity   TagType // The severity of the event, e.g., Emergency, …
+	TagPriority   TagType // The pirority of the event
+	TagAppHost    TagType // The hostname of the host where the log message is generated
+	TagAppIP      TagType // The IP address of the host where the application that generated the log message is running on.
+	TagAppVendor  TagType // The type of application that generated the log message, e.g., Cisco, ISS
+	TagAppName    TagType // The name of the application that generated the log message, e.g., asa, snort, sshd
+	TagSrcDomain  TagType // The domain name of the initiator of the event, usually a Windows domain
+	TagSrcZone    TagType // The originating zone
+	TagSrcHost    TagType // The hostname of the originator of the event or connection.
+	TagSrcIP      TagType // The IPv4 address of the originator of the event or connection.
+	TagSrcIPNAT   TagType // The natted (network address translation) IP of the originator of the event or connection.
+	TagSrcPort    TagType // The port number of the originating connection.
+	TagSrcPortNAT TagType // The natted port number of the originating connection.
+	TagSrcMac     TagType // The mac address of the host that originated the connection.
+	TagSrcUser    TagType // The user that originated the session.
+	TagSrcUid     TagType // The user id that originated the session.
+	TagSrcGroup   TagType // The group that originated the session.
+	TagSrcGid     TagType // The group id that originated the session.
+	TagSrcEmail   TagType // The originating email address
+	TagDstDomain  TagType // The domain name of the destination of the event, usually a Windows domain
+	TagDstZone    TagType // The destination zone
+	TagDstHost    TagType // The hostname of the destination of the event or connection.
+	TagDstIP      TagType // The IPv4 address of the destination of the event or connection.
+	TagDstIPNAT   TagType // The natted (network address translation) IP of the destination of the event or connection.
+	TagDstPort    TagType // The destination port number of the connection.
+	TagDstPortNAT TagType // The natted destination port number of the connection.
+	TagDstMac     TagType // The mac address of the destination host.
+	TagDstUser    TagType // The user at the destination.
+	TagDstUid     TagType // The user id that originated the session.
+	TagDstGroup   TagType // The group that originated the session.
+	TagDstGid     TagType // The group id that originated the session.
+	TagDstEmail   TagType // The destination email address
+	TagProtocol   TagType // The protocol, such as TCP, UDP, ICMP, of the connection
+	TagInIface    TagType // The incoming TagTypeerface
+	TagOutIface   TagType // The outgoing TagTypeerface
+	TagPolicyID   TagType // The policy ID
+	TagSessionID  TagType // The session or process ID
+	TagObject     TagType // The object affected.
+	TagAction     TagType // The action taken
+	TagCommand    TagType // The command executed
+	TagMethod     TagType // The method in which the action was taken, for example, public key or password for ssh
+	TagStatus     TagType // The status of the action taken
+	TagReason     TagType // The reason for the action taken or the status returned
+	TagBytesRecv  TagType // The number of bytes received
+	TagBytesSent  TagType // The number of bytes sent
+	TagPktsRecv   TagType // The number of packets received
+	TagPktsSent   TagType // The number of packets sent
+	TagDuration   TagType // The duration of the session
 )

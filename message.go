@@ -67,21 +67,21 @@ func (this *Message) Tokenize() (Token, error) {
 		nss := this.skipSpace(this.Data[this.state.start:])
 		this.state.start += nss
 
-		// Let's see if this is a field token, enclosed in two '%' chars
+		// Let's see if this is a tag token, enclosed in two '%' chars
 		// at least 2 chars left, and the first is a '%'
 		if this.state.start+1 < this.state.end && this.Data[this.state.start] == '%' {
 			var i int
 			var r rune
 
 			for i, r = range this.Data[this.state.start+1:] {
-				if !isFieldTokenChar(r) {
+				if !isTagTokenChar(r) {
 					break
 				}
 			}
 
 			if r == '%' && i > 0 {
 				tok := Token{
-					Field: FieldUnknown,
+					Tag:   TagUnknown,
 					Type:  TokenLiteral,
 					Value: this.Data[this.state.start : this.state.start+i+2],
 				}
@@ -108,7 +108,7 @@ func (this *Message) Tokenize() (Token, error) {
 			s++
 		}
 
-		tok := Token{Field: FieldUnknown, Type: t, Value: this.Data[this.state.start : this.state.start+l]}
+		tok := Token{Tag: TagUnknown, Type: t, Value: this.Data[this.state.start : this.state.start+l]}
 		this.state.tokCount++
 		this.state.prevToken = tok
 		this.state.start += l + s
@@ -450,8 +450,8 @@ func (this *Message) tokenStep(i int, r rune) bool {
 // - Hexadecimal values can be displayed in either lower- or upper-case for the numbers
 //   A–F.
 // - A leading zero in a set of numbers can be omitted; for example, you could either
-//   enter 0012 or 12 in one of the eight fields—both are correct.
-// - If you have successive fields of zeroes in an IPv6 address, you can represent
+//   enter 0012 or 12 in one of the eight tags—both are correct.
+// - If you have successive tags of zeroes in an IPv6 address, you can represent
 //   them as two colons (::). For example,0:0:0:0:0:0:0:5 could be represented as ::5;
 //   and ABC:567:0:0:8888:9999:1111:0 could be represented asABC:567::8888:9999:1111:0.
 //   However, you can only do this once in the address: ABC::567::891::00 would be
@@ -617,7 +617,7 @@ func isUrlChar(r rune) bool {
 	return 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z' || r >= '0' && r <= '9'
 }
 
-func isFieldTokenChar(r rune) bool {
+func isTagTokenChar(r rune) bool {
 	switch r {
 	case '+', '-', '*', ':', '_':
 		return true

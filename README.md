@@ -3,16 +3,16 @@ sequence
 
 **`sequence` is currently iced since I don't have time to continue, and should be considered unstable until further notice. If anyone's interested in continue development of this, I would be happy to add you to the project.**
 
-[sequence.trustpath.com](http://sequence.trustpath.com)
+[sequencer.io](http://sequencer.io)
 
-[![GoDoc](http://godoc.org/github.com/strace/sequence?status.svg)](http://godoc.org/github.com/strace/sequence) 
+[![GoDoc](http://godoc.org/github.com/surge/sequence?status.svg)](http://godoc.org/github.com/surge/sequence) 
 
-[![GoDoc](http://godoc.org/github.com/strace/sequence/cmd/sequence?status.svg)](http://godoc.org/github.com/strace/sequence/cmd/sequence)
+[![GoDoc](http://godoc.org/github.com/surge/sequence/cmd/sequence?status.svg)](http://godoc.org/github.com/surge/sequence/cmd/sequence)
 
 
 `sequence` is a _high performance sequential log scanner, analyzer and parser_. It _sequentially_ goes through a log message, _parses_ out the meaningful parts, without the use regular expressions. It can achieve _high performance_ parsing of **100,000 - 200,000 messages per second (MPS)** without the need to separate parsing rules by log source type.
 
-**If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/strace/sequence/issues) and we can arrange a way for me to download and test your logs.**
+**If you have a set of logs you would like me to test out, please feel free to [open an issue](https://github.com/surge/sequence/issues) and we can arrange a way for me to download and test your logs.**
 
 ### Motivation
 
@@ -87,7 +87,7 @@ cd $GOPATH/src/github.com/strace/sequence/cmd/sequence
 go run sequence.go
 ```
 
-Documentation is available at [sequence.trustpath.com](http://sequence.trustpath.com).
+Documentation is available at [sequencer.io](http://sequencer.io).
 
 ### License
 

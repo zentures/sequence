@@ -20,9 +20,9 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/surge/porter2"
-	"github.com/surge/xparse/etld"
 	"github.com/willf/bitset"
+	"github.com/zhenjl/porter2"
+	"github.com/zhenjl/xparse/etld"
 )
 
 // Analyzer builds an analysis tree that represents all the Sequences from messages.
@@ -125,7 +125,6 @@ func (this *analyzerNode) String() string {
 
 // Analyze analyzes the message sequence supplied, and returns the unique pattern
 // that will match this message.
-//func (this *Analyzer) Analyze(s string) (Sequence, error) {
 func (this *Analyzer) Analyze(seq Sequence) (Sequence, error) {
 	this.mu.RLock()
 	defer this.mu.RUnlock()
@@ -148,9 +147,8 @@ func (this *Analyzer) Analyze(seq Sequence) (Sequence, error) {
 }
 
 // Add adds a single message sequence to the analysis tree. It will not determine
-// if the tokens share a common parent or child at this point. After all the sequences
-// are added, then Finalize() should be called.
-//func (this *Analyzer) Add(s string) error {
+// if the tokens share a common parent or child at this point. After all the
+// sequences are added, then Finalize() should be called.
 func (this *Analyzer) Add(seq Sequence) error {
 	this.mu.Lock()
 	defer this.mu.Unlock()
@@ -180,36 +178,27 @@ func (this *Analyzer) Add(seq Sequence) error {
 		//more, rest := false, false
 
 		if vl >= 2 && token.Value[0] == '%' && token.Value[vl-1] == '%' {
-			// switch token.Value[vl-2] {
-			// case metaMore:
-			// 	token.Value = token.Value[:vl-2] + "%"
-			// 	more = true
-			// case metaRest:
-			// 	token.Value = token.Value[:vl-2] + "%"
-			// 	rest = true
-			// }
-
-			if f := name2FieldType(token.Value); f != FieldUnknown {
-				token.Field = f
+			if f := name2TagType(token.Value); f != TagUnknown {
+				token.Tag = f
 				token.Type = f.TokenType()
 			} else if t := name2TokenType(token.Value); t != TokenUnknown {
 				token.Type = t
-				token.Field = FieldUnknown
+				token.Tag = TagUnknown
 			}
 		}
 
 		var foundNode *analyzerNode
 
 		switch {
-		case token.Field != FieldUnknown:
-			// if Field is not FieldUnknown, it means the Field is one of the recognized
-			// field type. In this case, we just add it to the list of field types.
+		case token.Tag != TagUnknown:
+			// if Tag is not TagUnknown, it means the Tag is one of the recognized
+			// tag type. In this case, we just add it to the list of tag types.
 
-			if foundNode = this.levels[i][int(token.Field)]; foundNode == nil {
+			if foundNode = this.levels[i][int(token.Tag)]; foundNode == nil {
 				foundNode = newAnalyzerNode()
 				foundNode.Token = token
 				foundNode.level = i
-				foundNode.index = int(token.Field)
+				foundNode.index = int(token.Tag)
 				this.levels[i][foundNode.index] = foundNode
 			}
 
@@ -218,16 +207,16 @@ func (this *Analyzer) Add(seq Sequence) error {
 			// token could contain different values. In this case, we add it to the
 			// list of token types.
 
-			if foundNode = this.levels[i][FieldTypesCount+int(token.Type)]; foundNode == nil {
+			if foundNode = this.levels[i][TagTypesCount+int(token.Type)]; foundNode == nil {
 				foundNode = newAnalyzerNode()
 				foundNode.Token = token
 				foundNode.level = i
-				foundNode.index = FieldTypesCount + int(token.Type)
+				foundNode.index = TagTypesCount + int(token.Type)
 				this.levels[i][foundNode.index] = foundNode
 			}
 
-		case token.Field == FieldUnknown && token.Type == TokenLiteral:
-			// if the field type is unknown, and the token type is literal, that
+		case token.Tag == TagUnknown && token.Type == TokenLiteral:
+			// if the tag type is unknown, and the token type is literal, that
 			// means this is some type of string we parsed from the message.
 
 			// If we have gotten here, it means we found a string that we cannot
@@ -246,7 +235,7 @@ func (this *Analyzer) Add(seq Sequence) error {
 				foundNode.Token = token
 				foundNode.level = i
 				foundNode.index = len(this.levels[i]) - 1
-				foundNode.Field = FieldUnknown
+				foundNode.Tag = TagUnknown
 				this.litmaps[i][foundNode.Value] = foundNode.index
 				foundNode.isKey = token.isKey
 			}
@@ -476,7 +465,7 @@ func (this *Analyzer) compact() error {
 
 	this.nodeCount = make([]int, len(this.levels))
 
-	// Copy all the fixed children (leaf, TokenNames, FieldTokenMap) into the slice
+	// Copy all the fixed children (leaf, TokenNames, TagTokenMap) into the slice
 	// Copy any non-nil children into the slice
 	// Fix the index for all the children
 	// Add any literals to the hash
@@ -655,7 +644,7 @@ func (this *Analyzer) dump() int {
 
 		for j, n := range l {
 			if n != nil {
-				fmt.Printf("node %d.%d: %s %s - %s\n", i, j, n.Type, n.Field, n)
+				fmt.Printf("node %d.%d: %s %s - %s\n", i, j, n.Type, n.Tag, n)
 			}
 		}
 	}
@@ -718,10 +707,10 @@ func markSequenceKV(seq Sequence) Sequence {
 
 func analyzeSequence(seq Sequence) Sequence {
 	l := len(seq)
-	var fexists = make([]bool, FieldTypesCount)
+	var fexists = make([]bool, TagTypesCount)
 
 	defer func() {
-		// Step 7: try to see if we can find any srcport and dstport fields
+		// Step 7: try to see if we can find any srcport and dstport tags
 		for i, tok := range seq {
 			if tok.Type == token__host__ || tok.Type == token__email__ {
 				seq[i].Type = TokenString
@@ -730,26 +719,26 @@ func analyzeSequence(seq Sequence) Sequence {
 			if i < l-2 && tok.Type == TokenIPv4 && (seq[i+1].Value == "/" || seq[i+1].Value == ":") &&
 				seq[i+2].Type == TokenInteger {
 
-				switch tok.Field {
-				case FieldSrcIP:
-					seq[i+2].Field = FieldSrcPort
-					seq[i+2].Type = seq[i+2].Field.TokenType()
-					fexists[seq[i+2].Field] = true
+				switch tok.Tag {
+				case TagSrcIP:
+					seq[i+2].Tag = TagSrcPort
+					seq[i+2].Type = seq[i+2].Tag.TokenType()
+					fexists[seq[i+2].Tag] = true
 
-				case FieldDstIP:
-					seq[i+2].Field = FieldDstPort
-					seq[i+2].Type = seq[i+2].Field.TokenType()
-					fexists[seq[i+2].Field] = true
+				case TagDstIP:
+					seq[i+2].Tag = TagDstPort
+					seq[i+2].Type = seq[i+2].Tag.TokenType()
+					fexists[seq[i+2].Tag] = true
 
-				case FieldSrcIPNAT:
-					seq[i+2].Field = FieldSrcPortNAT
-					seq[i+2].Type = seq[i+2].Field.TokenType()
-					fexists[seq[i+2].Field] = true
+				case TagSrcIPNAT:
+					seq[i+2].Tag = TagSrcPortNAT
+					seq[i+2].Type = seq[i+2].Tag.TokenType()
+					fexists[seq[i+2].Tag] = true
 
-				case FieldDstIPNAT:
-					seq[i+2].Field = FieldDstPortNAT
-					seq[i+2].Type = seq[i+2].Field.TokenType()
-					fexists[seq[i+2].Field] = true
+				case TagDstIPNAT:
+					seq[i+2].Tag = TagDstPortNAT
+					seq[i+2].Type = seq[i+2].Tag.TokenType()
+					fexists[seq[i+2].Tag] = true
 				}
 
 			}
@@ -770,7 +759,7 @@ func analyzeSequence(seq Sequence) Sequence {
 
 	// Step 2: lower case all literals, and try to recognize emails and host names
 	for i, tok := range seq {
-		if tok.Type == TokenLiteral && tok.Field == FieldUnknown {
+		if tok.Type == TokenLiteral && tok.Tag == TagUnknown {
 			seq[i].Value = strings.ToLower(tok.Value)
 
 			// Matching a effective top level domain
@@ -803,36 +792,36 @@ func analyzeSequence(seq Sequence) Sequence {
 
 		// RFC5424 header format
 		// message time
-		seq[1].Field = FieldMsgTime
-		seq[1].Type = seq[1].Field.TokenType()
-		fexists[seq[1].Field] = true
+		seq[1].Tag = TagMsgTime
+		seq[1].Type = seq[1].Tag.TokenType()
+		fexists[seq[1].Tag] = true
 
 		// app ip or hostname
 		switch seq[2].Type {
 		case TokenIPv4:
-			seq[2].Field = FieldAppIP
+			seq[2].Tag = TagAppIP
 
 		case token__host__, TokenLiteral, TokenString:
-			seq[2].Field = FieldAppHost
+			seq[2].Tag = TagAppHost
 		}
 
-		seq[2].Type = seq[2].Field.TokenType()
-		fexists[seq[2].Field] = true
+		seq[2].Type = seq[2].Tag.TokenType()
+		fexists[seq[2].Tag] = true
 
 		// appname
-		seq[3].Field = FieldAppName
-		seq[3].Type = seq[3].Field.TokenType()
-		fexists[seq[3].Field] = true
+		seq[3].Tag = TagAppName
+		seq[3].Type = seq[3].Tag.TokenType()
+		fexists[seq[3].Tag] = true
 
 		// session id (or proc id)
-		seq[4].Field = FieldSessionID
-		seq[4].Type = seq[4].Field.TokenType()
-		fexists[seq[4].Field] = true
+		seq[4].Tag = TagSessionID
+		seq[4].Type = seq[4].Tag.TokenType()
+		fexists[seq[4].Tag] = true
 
 		// message id
-		seq[5].Field = FieldMsgId
-		seq[5].Type = seq[5].Field.TokenType()
-		fexists[seq[5].Field] = true
+		seq[5].Tag = TagMsgId
+		seq[5].Type = seq[5].Tag.TokenType()
+		fexists[seq[5].Tag] = true
 	} else if len(seq) >= 4 && seq[0].Type == TokenTime &&
 		(seq[1].Type == TokenIPv4 || seq[1].Type == TokenIPv6 || seq[1].Type == token__host__ || seq[1].Type == TokenLiteral || seq[1].Type == TokenString) &&
 		(seq[2].Type == TokenLiteral || seq[2].Type == TokenString) &&
@@ -840,26 +829,26 @@ func analyzeSequence(seq Sequence) Sequence {
 
 		// RFC3164 format 1 - "Oct 11 22:14:15 mymachine su: ..."
 		// message time
-		seq[0].Field = FieldMsgTime
-		seq[0].Type = seq[0].Field.TokenType()
-		fexists[seq[0].Field] = true
+		seq[0].Tag = TagMsgTime
+		seq[0].Type = seq[0].Tag.TokenType()
+		fexists[seq[0].Tag] = true
 
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIP
+			seq[1].Tag = TagAppIP
 
 		case token__host__, TokenLiteral, TokenString:
-			seq[1].Field = FieldAppHost
+			seq[1].Tag = TagAppHost
 		}
 
-		seq[1].Type = seq[1].Field.TokenType()
-		fexists[seq[1].Field] = true
+		seq[1].Type = seq[1].Tag.TokenType()
+		fexists[seq[1].Tag] = true
 
 		// appname
-		seq[2].Field = FieldAppName
-		seq[2].Type = seq[2].Field.TokenType()
-		fexists[seq[2].Field] = true
+		seq[2].Tag = TagAppName
+		seq[2].Type = seq[2].Tag.TokenType()
+		fexists[seq[2].Tag] = true
 	} else if len(seq) >= 7 && seq[0].Type == TokenTime &&
 		(seq[1].Type == TokenIPv4 || seq[1].Type == TokenIPv6 || seq[1].Type == token__host__ || seq[1].Type == TokenLiteral || seq[1].Type == TokenString) &&
 		(seq[2].Type == TokenLiteral || seq[2].Type == TokenString) &&
@@ -870,57 +859,57 @@ func analyzeSequence(seq Sequence) Sequence {
 
 		// RFC3164 format 2 - "Aug 24 05:34:00 CST 1987 mymachine myproc[10]: ..."
 		// message time
-		seq[0].Field = FieldMsgTime
-		seq[0].Type = seq[0].Field.TokenType()
-		fexists[seq[0].Field] = true
+		seq[0].Tag = TagMsgTime
+		seq[0].Type = seq[0].Tag.TokenType()
+		fexists[seq[0].Tag] = true
 
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIP
+			seq[1].Tag = TagAppIP
 
 		case token__host__, TokenLiteral, TokenString:
-			seq[1].Field = FieldAppHost
+			seq[1].Tag = TagAppHost
 		}
 
-		seq[1].Type = seq[1].Field.TokenType()
-		fexists[seq[1].Field] = true
+		seq[1].Type = seq[1].Tag.TokenType()
+		fexists[seq[1].Tag] = true
 
 		// appname
-		seq[2].Field = FieldAppName
-		seq[2].Type = seq[2].Field.TokenType()
-		fexists[seq[2].Field] = true
+		seq[2].Tag = TagAppName
+		seq[2].Type = seq[2].Tag.TokenType()
+		fexists[seq[2].Tag] = true
 
 		// session id (or proc id)
-		seq[4].Field = FieldSessionID
-		seq[4].Type = seq[4].Field.TokenType()
-		fexists[seq[4].Field] = true
+		seq[4].Tag = TagSessionID
+		seq[4].Type = seq[4].Tag.TokenType()
+		fexists[seq[4].Tag] = true
 	} else if len(seq) >= 7 && seq[0].Type == TokenTime &&
 		(seq[1].Type == TokenIPv4 || seq[1].Type == TokenIPv6 || seq[1].Type == token__host__ || seq[1].Type == TokenLiteral || seq[1].Type == TokenString) &&
 		seq[2].Value == "last" {
 
 		// "jan 12 06:49:56 irc last message repeated 6 times"
 		// message time
-		seq[0].Field = FieldMsgTime
-		seq[0].Type = seq[0].Field.TokenType()
-		fexists[seq[0].Field] = true
+		seq[0].Tag = TagMsgTime
+		seq[0].Type = seq[0].Tag.TokenType()
+		fexists[seq[0].Tag] = true
 
 		// app ip or hostname
 		switch seq[1].Type {
 		case TokenIPv4:
-			seq[1].Field = FieldAppIP
+			seq[1].Tag = TagAppIP
 
 		case token__host__, TokenLiteral, TokenString:
-			seq[1].Field = FieldAppHost
+			seq[1].Tag = TagAppHost
 		}
 
-		seq[1].Type = seq[1].Field.TokenType()
-		fexists[seq[1].Field] = true
+		seq[1].Type = seq[1].Tag.TokenType()
+		fexists[seq[1].Tag] = true
 	}
 
 	// glog.Debugf("3. %s", seq)
 
-	// Step 5: identify the likely fields by their prekeys (literals that usually
+	// Step 5: identify the likely tags by their prekeys (literals that usually
 	// exist before non-literals). All values must be within 2 tokens away, not
 	// counting single character non-a-zA-Z tokens.
 	distance := 2
@@ -928,18 +917,18 @@ func analyzeSequence(seq Sequence) Sequence {
 LOOP:
 	for i, tok := range seq {
 		// Only mark unknown tokens
-		if tok.Field != FieldUnknown {
+		if tok.Tag != TagUnknown {
 			continue
 		}
 
 		//glog.Debugf("1. checking tok=%q", tok)
 
-		if fields, ok := keymaps.prekeys[tok.Value]; ok {
+		if tags, ok := keymaps.prekeys[tok.Value]; ok {
 
 			// This token is a matching prekey
 
-			// Match anyting non-string fields first
-			for _, f := range fields {
+			// Match anyting non-string tags first
+			for _, f := range tags {
 
 				if fexists[f] || f.TokenType() == TokenString || f.TokenType() == TokenUnknown {
 					continue
@@ -950,10 +939,10 @@ LOOP:
 				// This is a specific type, so match the type, within the next 2 tokens
 				// away, not counting single character non-a-zA-Z tokens.
 				for k := i + 1; k < l && j < distance; k++ {
-					if !fexists[f] && seq[k].Field == FieldUnknown && f.TokenType() == seq[k].Type && !seq[k].isKey {
-						seq[k].Field = f
-						seq[k].Type = seq[k].Field.TokenType()
-						fexists[seq[k].Field] = true
+					if !fexists[f] && seq[k].Tag == TagUnknown && f.TokenType() == seq[k].Type && !seq[k].isKey {
+						seq[k].Tag = f
+						seq[k].Type = seq[k].Tag.TokenType()
+						fexists[seq[k].Tag] = true
 
 						//glog.Debugf("found something for tok=%q", tok)
 
@@ -972,26 +961,26 @@ LOOP:
 				}
 			}
 
-			for _, f := range fields {
+			for _, f := range tags {
 
 				//glog.Debugf("2. checking tok=%q", tok)
 
-				// If the field type is already taken, move on
+				// If the tag type is already taken, move on
 				// Should ONLY have TokenString left not touched
 				if fexists[f] || f.TokenType() != TokenString {
 					continue
 				}
 
 				switch f {
-				case FieldSrcHost, FieldDstHost, FieldSrcEmail, FieldDstEmail:
+				case TagSrcHost, TagDstHost, TagSrcEmail, TagDstEmail:
 					for k := i + 1; k < l && k < i+distance; k++ {
-						if !fexists[f] && seq[k].Field == FieldUnknown && !seq[k].isKey &&
-							(seq[k].Type == token__host__ && (f == FieldSrcHost || f == FieldDstHost)) ||
-							(seq[k].Type == token__email__ && (f == FieldSrcEmail || f == FieldDstEmail)) {
+						if !fexists[f] && seq[k].Tag == TagUnknown && !seq[k].isKey &&
+							(seq[k].Type == token__host__ && (f == TagSrcHost || f == TagDstHost)) ||
+							(seq[k].Type == token__email__ && (f == TagSrcEmail || f == TagDstEmail)) {
 
-							seq[k].Field = f
-							seq[k].Type = seq[k].Field.TokenType()
-							fexists[seq[k].Field] = true
+							seq[k].Tag = f
+							seq[k].Type = seq[k].Tag.TokenType()
+							fexists[seq[k].Tag] = true
 							continue LOOP
 						}
 					}
@@ -1002,20 +991,20 @@ LOOP:
 					// This is a regular string type, let's find a literal or string
 					// token, within the next 2 tokens
 					for k := i + 1; k < l && j < distance; k++ {
-						// if the value field type is a string, then we only look for
+						// if the value tag type is a string, then we only look for
 						// either TokenString or TokenLiteral tokens in the next one or
 						// two tokens. The token should not include any single character
 						// literals that are not a-zA-Z.
-						if seq[k].Field == FieldUnknown && !seq[k].isKey &&
+						if seq[k].Tag == TagUnknown && !seq[k].isKey &&
 							(seq[k].Type == TokenString ||
 								(seq[k].Type == TokenLiteral && len(seq[k].Value) > 1) ||
 								(seq[k].Type == TokenLiteral && len(seq[k].Value) == 1 &&
 									((seq[k].Value[0] >= 'a' && seq[k].Value[0] <= 'z') ||
 										(seq[k].Value[0] >= 'A' && seq[k].Value[0] <= 'Z')))) {
 
-							seq[k].Field = f
-							seq[k].Type = seq[k].Field.TokenType()
-							fexists[seq[k].Field] = true
+							seq[k].Tag = f
+							seq[k].Type = seq[k].Tag.TokenType()
+							fexists[seq[k].Tag] = true
 							continue LOOP
 						}
 
@@ -1039,11 +1028,11 @@ LOOP:
 	// accordingly We do seq step after the k=v step so we don't mistakenly mark
 	// any keys
 	for i, tok := range seq {
-		if !tok.isKey && !tok.isValue && (tok.Type == TokenLiteral || tok.Type == TokenString) && tok.Field == FieldUnknown {
+		if !tok.isKey && !tok.isValue && (tok.Type == TokenLiteral || tok.Type == TokenString) && tok.Tag == TagUnknown {
 			pw := porter2.Stem(tok.Value)
 			if f, ok := keymaps.keywords[pw]; ok {
 				if !fexists[f] {
-					seq[i].Field = f
+					seq[i].Tag = f
 					seq[i].Type = f.TokenType()
 					fexists[f] = true
 				}
@@ -1054,64 +1043,64 @@ LOOP:
 	//glog.Debugf("4. %s", seq)
 	// Step 6: look for the first and second of these types, and mark accordingly
 	for i, tok := range seq {
-		if tok.Field == FieldUnknown {
+		if tok.Tag == TagUnknown {
 			switch tok.Type {
 			case TokenTime:
-				if !fexists[FieldMsgTime] {
-					seq[i].Field = FieldMsgTime
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldMsgTime] = true
+				if !fexists[TagMsgTime] {
+					seq[i].Tag = TagMsgTime
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagMsgTime] = true
 				}
 
 			case TokenURI:
-				if !fexists[FieldObject] {
-					seq[i].Field = FieldObject
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldObject] = true
+				if !fexists[TagObject] {
+					seq[i].Tag = TagObject
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagObject] = true
 				}
 
 			case TokenMac:
-				if !fexists[FieldSrcMac] {
-					seq[i].Field = FieldSrcMac
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldSrcMac] = true
-				} else if !fexists[FieldDstMac] {
-					seq[i].Field = FieldDstMac
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldDstMac] = true
+				if !fexists[TagSrcMac] {
+					seq[i].Tag = TagSrcMac
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagSrcMac] = true
+				} else if !fexists[TagDstMac] {
+					seq[i].Tag = TagDstMac
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagDstMac] = true
 				}
 
 			case TokenIPv4:
-				if !fexists[FieldSrcIP] {
-					seq[i].Field = FieldSrcIP
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldSrcIP] = true
-				} else if !fexists[FieldDstIP] {
-					seq[i].Field = FieldDstIP
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldDstIP] = true
+				if !fexists[TagSrcIP] {
+					seq[i].Tag = TagSrcIP
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagSrcIP] = true
+				} else if !fexists[TagDstIP] {
+					seq[i].Tag = TagDstIP
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagDstIP] = true
 				}
 
 			case token__host__:
-				if !fexists[FieldSrcHost] {
-					seq[i].Field = FieldSrcHost
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldSrcHost] = true
-				} else if !fexists[FieldDstHost] {
-					seq[i].Field = FieldDstHost
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldDstHost] = true
+				if !fexists[TagSrcHost] {
+					seq[i].Tag = TagSrcHost
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagSrcHost] = true
+				} else if !fexists[TagDstHost] {
+					seq[i].Tag = TagDstHost
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagDstHost] = true
 				}
 
 			case token__email__:
-				if !fexists[FieldSrcEmail] {
-					seq[i].Field = FieldSrcEmail
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldSrcEmail] = true
-				} else if !fexists[FieldDstEmail] {
-					seq[i].Field = FieldDstEmail
-					seq[i].Type = seq[i].Field.TokenType()
-					fexists[FieldDstEmail] = true
+				if !fexists[TagSrcEmail] {
+					seq[i].Tag = TagSrcEmail
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagSrcEmail] = true
+				} else if !fexists[TagDstEmail] {
+					seq[i].Tag = TagDstEmail
+					seq[i].Type = seq[i].Tag.TokenType()
+					fexists[TagDstEmail] = true
 				}
 			}
 		}

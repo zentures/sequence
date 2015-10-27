@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/surge/glog"
 )
 
 var (
@@ -130,7 +129,12 @@ var (
 		{
 			"general",
 			`2015-01-24T19:34:47.269-0500 [conn72800] query foo.bar query: { _id: { $gte: { ContactId: BinData(3, 6C764EA2DABCE241C3E) }, $lt: { ContactId: BinData(3, 6C764EA2DAB4D9B1C3F) } } } planSummary: IXSCAN { _id: 1 } ntoreturn:0 ntoskip:0 nscanned:12 nscannedObjects:12 keyUpdates:0 numYields:10 locks(micros) r:2733 nreturned:12 reslen:4726 102ms`,
-			`%msgtime% [ %threadid% ] %action% %string% query : %object:-:ntoreturn% ntoreturn : %integer% ntoskip : %integer% nscanned : %integer% nscannedObjects : %integer% keyUpdates : %integer% numYields : %integer% locks ( micros ) r : %integer% nreturned : %integer% reslen : %integer% %string%`,
+			`%msgtime% [ %sessionid:string% ] %action% %string% query : %object:-:plansummary% plansummary : %object::-%`,
+		},
+		{
+			"general",
+			`2015-01-24T22:14:02.106-0500 [conn73988] update foo.bar query: { _id: BinData(3, 0294D28B65F8EA45B6E63E5F), Identifiers.Identifier: /^john\\smith@gmail\.com$/i, Lease: null } update: { $set: { Lease: { ExpirationTime: new Date(1422155662305), Owner: { Identifier: "47eb3bdd-2d18-4a02-8d95-b5036d6", Type: 1 } } } } nMatched:1 nModified:1 keyUpdates:0 numYields:0 locks(micros) w:292 365ms`,
+			`%msgtime% [ %sessionid:string% ] %action% %string% query : %object:-:update% update : %object:-:nmatched% %string:-%`,
 		},
 		{
 			"json",
@@ -215,34 +219,6 @@ func init() {
 	if err := ReadConfig("sequence.toml"); err != nil {
 		panic(err)
 	}
-}
-
-func TestParserOne(t *testing.T) {
-	r1 := `%msgtime% [ %threadid% ] %action% %string% query : %object:-:plansummary% plansummary : %object::-`
-	r2 := `%msgtime% [ %threadid% ] %action% %string% query : %object:-:update% update : %object:-:nmatched% %string:-%`
-
-	m :=
-		// `2015-01-24T19:34:47.269-0500 [conn72800] query foo.bar query: { _id: { $gte: { ContactId: BinData(3, 6C764EA2DABCE241C3E) }, $lt: { ContactId: BinData(3, 6C764EA2DAB4D9B1C3F) } } } planSummary: IXSCAN { _id: 1 } ntoreturn:0 ntoskip:0 nscanned:12 nscannedObjects:12 keyUpdates:0 numYields:10 locks(micros) r:2733 nreturned:12 reslen:4726 102ms`
-		`2015-01-24T22:14:02.106-0500 [conn73988] update foo.bar query: { _id: BinData(3, 0294D28B65F8EA45B6E63E5F), Identifiers.Identifier: /^john\\smith@gmail\.com$/i, Lease: null } update: { $set: { Lease: { ExpirationTime: new Date(1422155662305), Owner: { Identifier: "47eb3bdd-2d18-4a02-8d95-b5036d6", Type: 1 } } } } nMatched:1 nModified:1 keyUpdates:0 numYields:0 locks(micros) w:292 365ms`
-
-	parser := NewParser()
-	scanner := NewScanner()
-
-	seq, err := scanner.Scan(r1)
-	require.NoError(t, err, r1)
-	err = parser.Add(seq)
-	require.NoError(t, err, r1)
-
-	seq, err = scanner.Scan(r2)
-	require.NoError(t, err, r2)
-	err = parser.Add(seq)
-	require.NoError(t, err, r2)
-
-	seq, err = scanner.Scan(m)
-	seq, err = parser.Parse(seq)
-	require.NoError(t, err, m)
-	require.Equal(t, strings.ToLower(r2), strings.ToLower(seq.String()), m+"\n"+seq.PrintTokens())
-	glog.Debugln(seq.PrintTokens())
 }
 
 func TestParserMatchPatterns(t *testing.T) {

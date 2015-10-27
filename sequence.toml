@@ -45,7 +45,7 @@ timeFormats = [
 	"02/Jan/2006:15:04:05.999"
 ]
 
-fields = [
+tags = [
 	"msgid:string",				# The message identifier
 	"msgtime:time",				# The timestamp that’s part of the log message
 	"severity:integer",			# The severity of the event, e.g., Emergency, …
@@ -85,7 +85,6 @@ fields = [
 	"outiface:string",			# The outgoing interface
 	"policyid:integer",			# The policy ID
 	"sessionid:integer",		# The session or process ID
-	"threadid:string",
 	"object:string",			# The object affected.
 	"action:string",			# The action taken
 	"command:string",			# The command executed

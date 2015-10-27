@@ -37,13 +37,13 @@ func (this Sequence) String() string {
 	for _, token := range this {
 		var c string
 
-		if token.Field != FieldUnknown {
-			c = token.Field.String()
+		if token.Tag != TagUnknown {
+			c = token.Tag.String()
 
 			if token.until != "" {
 				c += ":-:" + token.until
 			} else {
-				if token.Type != token.Field.TokenType() {
+				if token.Type != token.Tag.TokenType() {
 					c += ":" + token.Type.String()
 				} else if token.plus || token.minus || token.star {
 					c += ":"

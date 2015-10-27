@@ -17,8 +17,8 @@ package sequence
 import "fmt"
 
 type (
-	// FieldType is the semantic representation of a token.
-	FieldType int
+	// TagType is the semantic representation of a token.
+	TagType int
 
 	// Tokentype is the lexical representation of a token.
 	TokenType int
@@ -28,10 +28,10 @@ type (
 // its best to determine the TokenType which could be a time stamp, IPv4 or IPv6
 // address, a URL, a mac address, an integer or a floating point number. In addition,
 // if the Scanner finds a token that's surrounded by %, e.g., %srcuser%, it will
-// try to determine the correct field type the token represents.
+// try to determine the correct tag type the token represents.
 type Token struct {
 	Type  TokenType // Type is the type of token the Value represents.
-	Field FieldType // Field determines which field the Value should be.
+	Tag   TagType   // Tag determines which tag the Value should be.
 	Value string    // Value is the extracted string from the log message.
 
 	isValue bool // Is this token a key in k=v pair
@@ -45,7 +45,7 @@ type Token struct {
 }
 
 func (this Token) String() string {
-	return fmt.Sprintf("{ Field=%q, Type=%q, Value=%q, isKey=%t, isValue=%t, minus=%t, plus=%t, star=%t }", this.Field, this.Type, this.Value, this.isKey, this.isValue, this.minus, this.plus, this.star)
+	return fmt.Sprintf("{ Tag=%q, Type=%q, Value=%q, isKey=%t, isValue=%t, minus=%t, plus=%t, star=%t }", this.Tag, this.Type, this.Value, this.isKey, this.isValue, this.minus, this.plus, this.star)
 }
 
 const (
@@ -59,7 +59,7 @@ const (
 	TokenURI                        // Token is an URL, in the form of http://... or https://...
 	TokenMac                        // Token is a mac address
 	TokenString                     // Token is a string that reprensents multiple possible values
-	token__END__                    // All field types must be inserted before this one
+	token__END__                    // All tag types must be inserted before this one
 	token__host__                   // Token is a host name
 	token__email__                  // Token is an email address
 )
@@ -86,13 +86,13 @@ func (this TokenType) String() string {
 	return tokens[this].label
 }
 
-func (this FieldType) String() string {
-	return config.fieldNames[this]
+func (this TagType) String() string {
+	return config.tagNames[this]
 }
 
-func (this FieldType) TokenType() TokenType {
-	if int(this) < len(config.fieldTypes) {
-		return config.fieldTypes[this]
+func (this TagType) TokenType() TokenType {
+	if int(this) < len(config.tagTypes) {
+		return config.tagTypes[this]
 	}
 
 	return TokenUnknown
@@ -131,8 +131,8 @@ func name2TokenType(s string) TokenType {
 	return TokenUnknown
 }
 
-func name2FieldType(s string) FieldType {
-	if t, ok := config.fieldIDs[s]; ok {
+func name2TagType(s string) TagType {
+	if t, ok := config.tagIDs[s]; ok {
 		return t
 	}
 

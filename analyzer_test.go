@@ -89,7 +89,7 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	for i := 1; i < allTypesCount; i++ {
 		node := atree.levels[l][i]
 
-		if i == FieldTypesCount+int(TokenTime) {
+		if i == TagTypesCount+int(TokenTime) {
 			require.NotNil(t, node, fmt.Sprintf("Expected: levels[%d][TokenTime] != nil, Actual: got nil", l))
 		} else {
 			require.Nil(t, node, fmt.Sprintf("Expected: levels[%d][%d] == nil, Actual: got non-nil %s", l, i, node))
@@ -125,7 +125,7 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	for i := 1; i < allTypesCount; i++ {
 		node := atree.levels[l][i]
 
-		if i == FieldTypesCount+int(TokenInteger) {
+		if i == TagTypesCount+int(TokenInteger) {
 			require.NotNil(t, node, fmt.Sprintf("Expected: levels[%d][TokenInteger] != nil, Actual: got nil", l))
 		} else {
 			require.Nil(t, node, fmt.Sprintf("Expected: levels[%d][%d] == nil, Actual: got non-nil %s", l, i, node))
@@ -159,7 +159,7 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	for i := 1; i < allTypesCount; i++ {
 		node := atree.levels[l][i]
 
-		if i == FieldTypesCount+int(TokenIPv4) {
+		if i == TagTypesCount+int(TokenIPv4) {
 			require.NotNil(t, node, fmt.Sprintf("Expected: levels[%d][TokenIPv4] != nil, Actual: got nil", l))
 		} else {
 			require.Nil(t, node, fmt.Sprintf("Expected: levels[%d][%d] == nil, Actual: got non-nil %s", l, i, node))
@@ -173,7 +173,7 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	for i := 1; i < allTypesCount; i++ {
 		node := atree.levels[l][i]
 
-		if i == FieldTypesCount+int(TokenInteger) {
+		if i == TagTypesCount+int(TokenInteger) {
 			require.NotNil(t, node, fmt.Sprintf("Expected: levels[%d][TokenInteger] != nil, Actual: got nil", l))
 		} else {
 			require.Nil(t, node, fmt.Sprintf("Expected: levels[%d][%d] == nil, Actual: got non-nil %s", l, i, node))

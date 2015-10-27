@@ -1,3 +1,5 @@
+version = "0.1"
+
 timeFormats = [
 	"Mon Jan _2 15:04:05 2006",
 	"Mon Jan _2 15:04:05 MST 2006",
@@ -43,7 +45,7 @@ timeFormats = [
 	"02/Jan/2006:15:04:05.999"
 ]
 
-fields = [
+tags = [
 	"msgid:string",				# The message identifier
 	"msgtime:time",				# The timestamp that’s part of the log message
 	"severity:integer",			# The severity of the event, e.g., Emergency, …

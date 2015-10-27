@@ -32,7 +32,7 @@ const (
 // Parser is a tree-based parsing engine for log messages. It builds a parsing tree
 // based on pattern sequence supplied, and for each message sequence, returns the
 // matching pattern sequence. Each of the message tokens will be marked with the
-// semantic field types.
+// semantic tag types.
 type Parser struct {
 	root   *parseNode
 	height int
@@ -100,7 +100,7 @@ func (this *Parser) Add(seq Sequence) error {
 
 		if vl >= 2 && token.Value[0] == '%' && token.Value[vl-1] == '%' {
 			var err error
-			if token, err = processFieldToken(token); err != nil {
+			if token, err = processTagToken(token); err != nil {
 				return err
 			}
 		}
@@ -114,7 +114,7 @@ func (this *Parser) Add(seq Sequence) error {
 			// token nodes
 			if parent.tc[token.Type] != nil {
 				for _, n := range parent.tc[token.Type] {
-					if n.Type == token.Type && n.Field == token.Field && n.until == token.until {
+					if n.Type == token.Type && n.Tag == token.Tag && n.until == token.until {
 						found = n
 						break
 					}
@@ -156,7 +156,7 @@ func (this *Parser) Add(seq Sequence) error {
 			case found.Type != TokenUnknown && found.Type != TokenLiteral:
 				if grandparent.tc[found.Type] != nil {
 					for _, n := range grandparent.tc[found.Type] {
-						if n.Type == found.Type && n.Field == found.Field {
+						if n.Type == found.Type && n.Tag == found.Tag {
 							grandchild = n
 							break
 						}
@@ -248,6 +248,7 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 			if parent.node.until != "" {
 				i := parent.seqidx
 				for ; i < len(seq) && seq[i].Value != parent.node.until; i++ {
+					// glog.Debugf("consuming %q", seq[i])
 					path[l].Value += " " + seq[i].Value
 				}
 
@@ -255,6 +256,7 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 
 				// Consumed all tokens, yet this is not a leaf, then wrong, continue
 				if parent.seqidx == len(seq) && !parent.node.leaf {
+					// glog.Debugf("seqidx=%d, len=%d", parent.seqidx, len(seq))
 					continue
 				}
 			}
@@ -324,7 +326,7 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 			t := bestPath[i]
 			if t.plus || t.star {
 				var j int
-				for j = i + 1; j < l && (bestPath[j].star || bestPath[j].plus) && t.Field == bestPath[j].Field && t.Type == bestPath[j].Type; j++ {
+				for j = i + 1; j < l && (bestPath[j].star || bestPath[j].plus) && t.Tag == bestPath[j].Tag && t.Type == bestPath[j].Type; j++ {
 					t.Value += " " + bestPath[j].Value
 				}
 				bestPath[i] = t
@@ -338,56 +340,56 @@ func (this *Parser) Parse(seq Sequence) (Sequence, error) {
 	return nil, ErrNoMatch
 }
 
-// A field token is of the format "%field:type:meta%".
-// - field is the name of the field
-// - type is the token type of the field
+// A tag token is of the format "%tag:type:meta%".
+// - tag is the name of the tag
+// - type is the token type of the tag
 // - meta is one of the following meta characters -, +, *, where
 //   - "-" means the rest of the tokens
 //   - "+" means one or more of this token
 //   - "*" means zero or more of this token
 //
 // Formats can be
-// - %field%
+// - %tag%
 // - %type%
-// - %field:type%
-// - %field:meta%
+// - %tag:type%
+// - %tag:meta%
 // - %type:meta%
-// - %field:type:meta%
-func processFieldToken(token Token) (Token, error) {
+// - %tag:type:meta%
+func processTagToken(token Token) (Token, error) {
 	parts := strings.Split(token.Value[1:len(token.Value)-1], ":")
 
 	switch len(parts) {
 	case 1:
-		// If there's only 1 part, then it can only be %field% or %type%
-		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
+		// If there's only 1 part, then it can only be %tag% or %type%
+		if token.Tag = name2TagType(parts[0]); token.Tag == TagUnknown {
 			token.Type = name2TokenType(parts[0])
 		} else {
-			token.Type = token.Field.TokenType()
+			token.Type = token.Tag.TokenType()
 		}
 
 		if token.Type == TokenUnknown {
-			return token, fmt.Errorf("Invalid field token %q: unknown type", token.Value)
+			return token, fmt.Errorf("Invalid tag token %q: unknown type", token.Value)
 		}
 
 	case 2:
 		// If there are two parts, then it can be any of the following combination
-		// - %field:type%
-		// - %field:meta%
+		// - %tag:type%
+		// - %tag:meta%
 		// - %type:meta%
 		// - %literal:until%
 
 		meta := false
 
-		// first part must be either field or type
-		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
+		// first part must be either tag or type
+		if token.Tag = name2TagType(parts[0]); token.Tag == TagUnknown {
 			if token.Type = name2TokenType(parts[0]); token.Type == TokenUnknown {
-				return token, fmt.Errorf("Invalid field token %q", token.Value)
+				return token, fmt.Errorf("Invalid tag token %q", token.Value)
 			} else {
 				meta = true
 			}
 		} else if token.Type = name2TokenType(parts[1]); token.Type == TokenUnknown {
 			meta = true
-			token.Type = token.Field.TokenType()
+			token.Type = token.Tag.TokenType()
 		}
 
 		if meta {
@@ -399,25 +401,25 @@ func processFieldToken(token Token) (Token, error) {
 			case metaStar:
 				token.star = true
 			default:
-				return token, fmt.Errorf("Invalid field token %q: unknown meta character", token.Value)
+				return token, fmt.Errorf("Invalid tag token %q: unknown meta character", token.Value)
 			}
 		}
 
 	case 3:
-		// %field:type:meta%
-		// %field:-:until%
+		// %tag:type:meta%
+		// %tag:-:until%
 
-		if token.Field = name2FieldType(parts[0]); token.Field == FieldUnknown {
-			return token, fmt.Errorf("Invalid field token %q", token.Value)
+		if token.Tag = name2TagType(parts[0]); token.Tag == TagUnknown {
+			return token, fmt.Errorf("Invalid tag token %q", token.Value)
 		}
 
 		if parts[1] == metaMinus {
 			token.minus = true
-			token.Type = token.Field.TokenType()
+			token.Type = token.Tag.TokenType()
 			token.until = parts[2]
 			return token, nil
 		} else if parts[1] == "" {
-			token.Type = token.Field.TokenType()
+			token.Type = token.Tag.TokenType()
 		} else if token.Type = name2TokenType(parts[1]); token.Type == TokenUnknown {
 			return token, fmt.Errorf("Invalid parts token %q: unknown type", token.Value)
 		}
@@ -430,7 +432,7 @@ func processFieldToken(token Token) (Token, error) {
 		case metaStar:
 			token.star = true
 		default:
-			return token, fmt.Errorf("Invalid field token %q: unknown meta character", token.Value)
+			return token, fmt.Errorf("Invalid tag token %q: unknown meta character", token.Value)
 		}
 
 	default:
