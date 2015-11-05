@@ -17,5 +17,5 @@
 // without the use regular expressions. It can parse over 100,000 messages per
 // second without the need to separate parsing rules by log source type.
 //
-// Documentation and other information are available at sequence.trustpath.com
+// Documentation and other information are available at sequencer.io
 package sequence
