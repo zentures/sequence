@@ -102,6 +102,10 @@ func tnType(r rune) int {
 }
 
 func timeStep(r rune, cur *timeNode) *timeNode {
+	if cur == nil {
+		return nil
+	}
+
 	t := tnType(r)
 
 	for _, n := range cur.children {
