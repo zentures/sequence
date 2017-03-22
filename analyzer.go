@@ -591,8 +591,8 @@ func (this *Analyzer) analyzeMessage(seq Sequence) ([]*analyzerNode, error) {
 
 		// For each of the child for the current node, we test to see if they should
 		// be added to the stack for visiting.
-		for i, e := cur.node.children.NextSet(0); e; i, e = cur.node.children.NextSet(i + 1) {
-			node := this.levels[cur.node.level+1][i]
+		for i, e := cur.node.children.NextSet(0); e && i < uint(len(this.levels[cur.node.level+1])); i, e = cur.node.children.NextSet(i + 1) {
+                        node := this.levels[cur.node.level+1][i]
 
 			if node != nil {
 				// Anything other than these 3 conditions are considered no match.
