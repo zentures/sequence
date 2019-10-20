@@ -185,7 +185,7 @@ func TestAnalyzerMergeNodes(t *testing.T) {
 	atree.Finalize()
 
 	for _, l := range []int{1, 7, 8, 10} {
-		require.Equal(t, allTypesCount+1, len(atree.levels[l]), fmt.Sprintf("Expected: len(levels[%d]) == %d, Actual: got non-nil %s", l, allTypesCount+1, len(atree.levels[l])))
+		require.Equal(t, allTypesCount+1, len(atree.levels[l]), fmt.Sprintf("Expected: len(levels[%d]) == %d, Actual: got non-nil %d", l, allTypesCount+1, len(atree.levels[l])))
 
 		for i := 1; i < allTypesCount; i++ {
 			node := atree.levels[l][i]
